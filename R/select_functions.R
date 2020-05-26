@@ -54,7 +54,7 @@ select_sample <- function(df,
                           after = 2, 
                           num_cities = NULL, 
                           home = FALSE,
-                          lockdown = '2020-03-17') {
+                          lockdown = '2020-03-19') {
   
   # Function: select_sample
   ## Inputs: 
@@ -119,4 +119,58 @@ select_sample <- function(df,
     
   }
   
+}
+
+event_study <- function(df, 
+                        before = 2, 
+                        after = 2, 
+                        num_cities = NULL, 
+                        home = FALSE,
+                        lockdown = '2020-03-19',
+                        user_fe = F) {
+  
+  # Select Sample
+  sample <- select_sample(df, before, after, num_cities, home, lockdown)
+  
+  # Trip level
+  sample <- sample %>%  
+    distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
+    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
+                  DURATION.MINUTES, s_richness, COUNTY, STATE, HOUR, n_trips_pld) %>%
+    group_by(OBSERVER.ID, OBSERVATION.DATE) %>%
+    mutate(n_trips_day = n_distinct(SAMPLING.EVENT.IDENTIFIER),
+           dif = OBSERVATION.DATE - as.Date(lockdown)) %>%
+    filter(dif %in% -30:30) %>%
+    mutate(dif = str_replace(as.character(dif), '-','m')) %>%
+    fastDummies::dummy_cols(select_columns = "dif")
+  
+  # Estimate
+  if(isFALSE(user_fe)) {
+  est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_day +
+              n_trips_pld + COUNTY + OBSERVATION.DATE + HOUR, 
+            data = sample)
+  
+  # tidy
+  est_df <- broom::tidy(est, conf.int = T) %>% 
+    filter(str_detect(term, "^dif")) %>%
+    mutate(time = str_replace(term, 'dif', ''),
+           time = as.numeric(str_replace(time, 'm', '-')))
+  
+  return(est_df)
+  }
+  
+  if(isTRUE(user_fe)) {
+    est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_day +
+               OBSERVER.ID + COUNTY + OBSERVATION.DATE + HOUR, 
+              data = sample)
+    
+    # tidy
+    est_df <- broom::tidy(est, conf.int = T) %>% 
+      filter(str_detect(term, "^dif")) %>%
+      mutate(time = str_replace(term, 'dif', ''),
+             time = as.numeric(str_replace(time, 'm', '-')))
+    
+    return(est_df)
+  }
+ 
 }

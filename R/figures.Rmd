@@ -36,83 +36,153 @@ Sample selection protocol:
 
 5. Duration between 5-240 mins
 
-## Full Sample (All Districts)
+## Birdwatching Activity in All Cities
+Summary Stats for 2020 in 1 month window around lockdown
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
 ebird <- readRDS('ebd_full.rds')
+ebird <- filter(ebird, YEAR == 2020) 
 
-full <- ebird %>%
-  group_by(YEARMONTH) %>%
+# Number of Users by day
+stats <- select_sample(ebird, lockdown='2020-03-19')
+stats <- stats %>%
+  group_by(OBSERVATION.DATE) %>%
   summarize(`Num. Users` = n_distinct(OBSERVER.ID),
             `Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
-            `Num. Species` = n_distinct(TAXONOMIC.ORDER),
-            `Num. Cities` = n_distinct(COUNTY))
+            `Num. Species` = n_distinct(TAXONOMIC.ORDER)) %>%
+  gather(key, value, starts_with('N'))
 
-kable(full, caption = 'Monthly Statistics') %>% kable_styling() 
+ggplot(stats, aes(x=OBSERVATION.DATE, y=value)) +
+  geom_line() + 
+  labs(title = 'Birdwatching Activity in all Cities', y='') +
+  geom_vline(xintercept=as.numeric(as.Date("2020-03-19")), linetype='dashed') +
+  scale_x_date(date_breaks = '10 days', date_labels = '%b\n%d') +
+  theme(panel.grid.minor = element_blank(), 
+        axis.line = element_blank(), 
+        axis.title.x = element_blank()) +
+  facet_wrap(~key, scales='free')
+```
+
+## Birdwatching Activity in Top 4 Cities
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+# By City
+stats <- select_sample(ebird, num_cities = 20, lockdown = '2020-03-19')
+stats <- filter(ebird, COUNTY %in% c('Mumbai', 'Bangalore', 'Chennai', 'Hyderabad'))
+stats <- stats %>%
+  group_by(COUNTY, OBSERVATION.DATE) %>%
+  summarize(`Num. Users` = n_distinct(OBSERVER.ID),
+            `Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
+            `Num. Species` = n_distinct(TAXONOMIC.ORDER)) %>%
+  gather(key, value, starts_with('N'))
+
+ggplot(stats, aes(x=OBSERVATION.DATE, y=value)) +
+  geom_line() +
+  labs(title = 'Birdwatching Activity in Four Major Cities', y='') +
+  geom_vline(xintercept=as.numeric(as.Date("2020-03-19")), linetype='dashed') +
+  scale_x_date(date_breaks = '10 days', date_labels = '%b\n%d') +
+  theme(panel.grid.minor = element_blank(), 
+        axis.line = element_blank(), 
+        axis.title.x = element_blank()) +
+  facet_grid(COUNTY ~ key, scales='free')
 
 ```
 
 ## Top 20 Cities
-City is not listed in eBird. Location identifiers include district, state, and coordinates. We select eBird cities that are in the top 20 by population density. Not all top 20 cities may be present in the eBird sample.
+This is the subset of eBird observations meeting the pariticipation criteria in the top 20 Indian cities by population size. Note that not all top 20 cities may be present in eBird. 
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-# Top 20 cities
-cities <- ebird %>%
+stats <- select_sample(ebird, num_cities = 20)
+stats <- stats %>% 
   group_by(COUNTY) %>%
-  summarize(state = first(STATE),
-            pop_density = first(POP_DENSITY)) %>%
-  filter(COUNTY != "") %>%
-  arrange(-pop_density) %>%
-  head(20)
-ebd_t20 <- merge(ebird, cities, by='COUNTY') #n=52,025
-
-kable(cities) %>% kable_styling()
+  summarize(STATE = first(STATE), POP_DENSITY = first(POP_DENSITY)) %>%
+  arrange(-POP_DENSITY)
+kable(stats, caption = 'eBird Cities in Top 20 by Population Density') %>% kable_styling()
 ```
 
-## Monthly Statistics
-Discrepancy in number of users coming from users who birdwatched outside of top 20 cities in one of the month. For example, this could be a college student whose March trips were in a small town, and april trips were at his parents home in a big city.
-
-NOTE: should we do the sample restriction AFTER selecting city list?
+## Pre-Post Lockdown Statistics
+This table shows aggregate birdwatching activity in the full sample among users who birdwatched on at least 2 days before and after Junta lockdown (March 19, 2020). 
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-stats <- ebd_t20 %>%
-  group_by(YEARMONTH) %>%
+# All Cities
+stats <- select_sample(ebird)
+stats <- stats %>%
+  mutate(PREPOST = if_else(OBSERVATION.DATE < '2020-03-19', 'Pre-lockdown', 'Post-lockdown')) %>%
+  group_by(PREPOST) %>%
   summarize(`Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
             `Num. Cities` = n_distinct(COUNTY),
             `Num. Users` = n_distinct(OBSERVER.ID),
             `Num. Species` = n_distinct(TAXONOMIC.ORDER))
 
-stats <- as.data.frame(t(stats))
+kable(stats, caption = 'All Cities') %>% kable_styling()
 
-kable(stats) %>% kable_styling()
+# Top 20
+stats <- select_sample(ebird, num_cities = 20)
+stats <- stats %>%
+  mutate(PREPOST = if_else(OBSERVATION.DATE < '2020-03-19', 'Pre-lockdown', 'Post-lockdown')) %>%
+  group_by(PREPOST) %>%
+  summarize(`Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
+            `Num. Cities` = n_distinct(COUNTY),
+            `Num. Users` = n_distinct(OBSERVER.ID),
+            `Num. Species` = n_distinct(TAXONOMIC.ORDER))
+
+kable(stats, caption = 'Top 20') %>% kable_styling()
 ```
 
 ## Trip Statistics
+This table shows trip-level statistics before and after lockdown.
+
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-trip_level <- ebd_t20 %>% 
+
+# Full Sample
+stats <- select_sample(ebird)
+stats <- stats %>%  
   distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(COUNTY, STATE, OBSERVATION.DATE, TIME.OBSERVATIONS.STARTED,
-                OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER, DURATION.MINUTES,
-                NUMBER.OBSERVERS, YEARMONTH, s_richness, YEAR, c_code_11)
-
-trip_stats <- trip_level %>%
-  group_by(YEARMONTH) %>%
+  dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
+                DURATION.MINUTES, s_richness, COUNTY) %>%
+  mutate(PREPOST = if_else(OBSERVATION.DATE < '2020-03-19', 'Pre-lockdown', 'Post-lockdown')) %>%
+  group_by(PREPOST) %>%
   summarize(`Trip Length` = mean(DURATION.MINUTES),
-            `Species Richness` = mean(s_richness, na.rm=T))
-trip_stats <- as.data.frame(t(trip_stats))
+            `Mean Species Richness` = mean(s_richness, na.rm=T),
+            `Median Species Richness` = median(s_richness, na.rm=T))
 
-kable(trip_stats) %>% kable_styling()
-```
+kable(stats, caption='All Cities') %>% kable_styling()
 
-## Trip Statistics by City
-```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-trip_city <- trip_level %>%
-  group_by(COUNTY, YEARMONTH) %>%
+# Top 20
+stats <- select_sample(ebird, num_cities = 20)
+stats <- stats %>%  
+  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
+  dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
+                DURATION.MINUTES, s_richness, COUNTY) %>%
+  mutate(PREPOST = if_else(OBSERVATION.DATE < '2020-03-19', 'Pre-lockdown', 'Post-lockdown')) %>%
+  group_by(PREPOST) %>%
   summarize(`Trip Length` = mean(DURATION.MINUTES),
-            `Species Richness` = mean(s_richness, na.rm=T))
-#trip_city <- as.data.frame(t(trip_city))
-kable(trip_city) %>%
-  kable_styling(fixed_thead = T)
+            `Mean Species Richness` = mean(s_richness, na.rm=T),
+            `Median Species Richness` = median(s_richness, na.rm=T))
+
+kable(stats, caption='Top 20') %>% kable_styling()
+
+# By City
+stats <- select_sample(ebird, num_cities = 20)
+stats <- stats %>%  
+  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
+  dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
+                DURATION.MINUTES, s_richness, COUNTY) %>%
+  mutate(PREPOST = if_else(OBSERVATION.DATE < '2020-03-19', 'Before', 'After')) %>%
+  group_by(COUNTY, PREPOST) %>%
+  summarize(`Trip Length` = mean(DURATION.MINUTES),
+            `Mean Species Richness` = mean(s_richness, na.rm=T),
+            `Median Species Richness` = median(s_richness, na.rm=T)) %>%
+  filter(COUNTY!='Central Delhi')
+
+ggplot(stats, aes(x=factor(PREPOST), y=`Mean Species Richness`)) + 
+  geom_bar(stat = 'identity') + 
+  scale_x_discrete(limits=c('Before','After')) +
+  labs(title = 'Mean Species Richness Per Trip') +
+  theme(panel.grid.minor = element_blank(), 
+        axis.line = element_blank(), 
+        axis.title.x = element_blank(),
+        axis.ticks = element_blank()) +
+  facet_wrap(~COUNTY, scales = 'free')
 ```
 
 ## Marginal Species by city
@@ -120,79 +190,120 @@ Marginal species are species observed after lockdown which were not observed bef
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
 # Species List
-city_list <- cities$COUNTY
+stats <- select_sample(ebird, num_cities = 20) %>%
+  mutate(prepost = if_else(OBSERVATION.DATE < '2020-03-19', 'PRE', 'POST'))
+city_list <- distinct(stats, COUNTY)$COUNTY
 marginal_species <- data.frame()
+
+# stack Marginal Species per city
 for(city in city_list) {
   
-  df_mar <- ebd_t20 %>%
-    filter(YEARMONTH == '2020-03' & COUNTY == city) %>%
+  df_pre <- stats %>%
+    filter(COUNTY == city & prepost == 'PRE') %>%
     distinct(COMMON.NAME, .keep_all = T) %>%
-    select('COMMON.NAME', 'COUNTY')
-  
-  df_apr <- ebd_t20 %>%
-    filter(YEARMONTH == '2020-04' & COUNTY == city) %>%
+    select('COMMON.NAME', 'SCIENTIFIC.NAME', 'COUNTY')
+
+  df_post <- stats %>%
+    filter(COUNTY == city & prepost == 'POST') %>%
     distinct(COMMON.NAME, .keep_all = T) %>%
-    select('COMMON.NAME', 'COUNTY')
+    select('COMMON.NAME', 'SCIENTIFIC.NAME', 'COUNTY')
   
-  marginal <- anti_join(df_apr, df_mar, by='COMMON.NAME')
-  marginal_species <- rbind(marginal_species,marginal)
+  marginal <- anti_join(df_post, df_pre, by='COMMON.NAME')
+  marginal_species <- rbind(marginal_species, marginal)
 }
 
 kable(marginal_species) %>%
   kable_styling(fixed_thead = T)
-
+rm(list=c('city_list', 'df_post', 'df_pre', 'marginal'))
 ```
 
 # Event Study - Regression Disconinuity
 Each black point is the difference in species richness compared to the day of lockdown. 
 Specifically, we compute the number of days from each trip until the day of lockdown (negative values are days until lockdown, positive values are days after lockdown). We regress species richness on dummies for time until lockdown with date, hour, and state fixed effects. We also control for duration of trip and number of trips per day for each user. 
 
-NOTE: add user fixed effects? Absorbs a lot of variation. Users are already very similar. Main benefit is controlling for unobserved, innate differences across users. 
 
-```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-trip_level$lockdown <- as.Date('2020-03-25')
-trip_level$dif <- trip_level$OBSERVATION.DATE - trip_level$lockdown
-trip_level$TIME.OBSERVATIONS.STARTED <- hms(trip_level$TIME.OBSERVATIONS.STARTED)
-trip_level$hour <- hour(trip_level$TIME.OBSERVATIONS.STARTED)
-trip_level$state_code_2011 = substr(trip_level$c_code_11, 1, 3)
-trip_level <- trip_level %>%
-  group_by(OBSERVER.ID, OBSERVATION.DATE) %>%
-  mutate(n_trips_day = n_distinct(SAMPLING.EVENT.IDENTIFIER))
+Notes: 
 
-window <- trip_level  %>%
-  filter(YEAR == '2020' & dif %in% -30:30) %>%
-  mutate(dif = str_replace(as.character(dif), '-','m'),
-         state_code_2011 = substr(c_code_11, 1, 3))
+1. We see action around Janta curfew, not as much around official lockdown. Suggests people responded to the former. 
 
-window <- fastDummies::dummy_cols(window, select_columns = "dif")
+2. We start seeing increases in species diversity post-lockdown when we narrow in on urban environments
 
-# Estimate
-est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_day + 
-            state_code_2011 + OBSERVATION.DATE + hour, 
-          data=window)
+3. Larger increases in post-lockdown species diversity as we increase the participation constraint (e.g. 10 days before/after curfew)
 
-# Tidy Model
-est_df <- broom::tidy(est, conf.int=T) %>% 
-  filter(str_detect(term, "^dif")) %>%
-  mutate(time = str_replace(term, 'dif', ''),
-         time = as.numeric(str_replace(time, 'm', '-')))
 
-ggplot(est_df, aes(x=time, y=estimate, group=1)) + 
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=20,fig.width=12}
+stats <- data.frame()
+
+# All Cities, 2 days before/after
+coefs <- event_study(ebird)
+coefs$type <- 'Cities: all, participation: 2 days, LD: Mar 19'
+stats <- rbind(stats, coefs)
+
+# All Cities, 2 days before/after, March 24
+#coefs <- event_study(ebird, lockdown = '2020-03-24')
+#coefs$type <- 'Cities: all, 2 days pre/post, Mar 24'
+#stats <- rbind(stats, coefs)
+
+# Top 20, 2 days before/after
+coefs <- event_study(ebird, num_cities = 20)
+coefs$type <- 'Cities: 20, participation: 2 days, LD: Mar 19'
+stats <- rbind(stats, coefs)
+
+# Top 20, 2 days before/after, March 24
+#coefs <- event_study(ebird, num_cities = 20, lockdown = '2020-03-24')
+#coefs$type <- 'Top 20 Cities, 2 days pre/post, Mar 24'
+#stats <- rbind(stats, coefs)
+
+# Top 20, 5 days before/after
+coefs <- event_study(ebird, num_cities = 20, before = 5, after = 5)
+coefs$type <- 'Cities: 20, participation: 5 days, LD: Mar 19'
+stats <- rbind(stats, coefs)
+
+# Top 20, 5 days before/after, March 24
+#coefs <- event_study(ebird, num_cities = 20, before = 5, after = 5, 
+#                     lockdown = '2020-03-24', user_fe=T)
+#coefs$type <- 'Top 20 Cities, 5 days pre/post, Mar 24'
+#stats <- rbind(stats, coefs)
+
+# Top 20, 10 days before/after
+coefs <- event_study(ebird, num_cities = 20, before = 10, after = 10)
+coefs$type <- 'Cities: 20, participation: 10 days, LD: Mar 19'
+stats <- rbind(stats, coefs)
+
+# Top 20, 10 days before/after, March 24
+#coefs <- event_study(ebird, num_cities = 20, before = 10, after = 10, 
+#                     lockdown = '2020-03-24', user_fe=T)
+#coefs$type <- 'Top 20 Cities, 10 days pre/post, Mar 24'
+#stats <- rbind(stats, coefs)
+
+# Top 50, 5 days before/after
+coefs <- event_study(ebird, num_cities = 50, before = 5, after = 5)
+coefs$type <- 'Citiess: 50, participation: 5 days, LD: Mar 19'
+stats <- rbind(stats, coefs)
+
+# Top 50, 5 days before/after, March 24
+coefs <- event_study(ebird, num_cities = 50, before = 5, after = 5, 
+                     lockdown = '2020-03-24')
+coefs$type <- 'Cities: 50, participation: 5 days, LD: Mar 24'
+stats <- rbind(stats, coefs)
+
+ggplot(stats, aes(x=time, y=estimate, group=1)) + 
   geom_line() + 
   geom_point(aes(color='Coefficient')) +
   geom_ribbon(aes(ymin=conf.low, ymax=conf.high, fill='95% CI'), alpha=.5) +
   geom_vline(xintercept=0, linetype='dashed') +
   geom_hline(yintercept=0, linetype='dashed') +
-  geom_text(aes(x=-2, label="Lockdown", y=4), angle=90) +
+  geom_text(aes(x=-2, label="Lockdown", y=2), angle=90) +
   ylab('Species Richness Relative to Lockdown\n') +
   xlab('\n Days to Lockdown') +
-  scale_x_continuous(breaks = seq(-30, 30, by = 5)) +
+  scale_x_continuous(breaks = seq(-20, 30, by = 5)) +
   scale_colour_manual("" , values = "black") +
   scale_fill_manual("", values = "grey12") +
   theme(panel.grid.minor = element_blank(),
         text = element_text(size=13),
         axis.line = element_blank(), 
-        axis.ticks = element_blank())
+        axis.ticks = element_blank()) +
+  facet_wrap(~type, scales='free', ncol=2)
 ```
 
 ## Species Distributions (Bangalore Only)
@@ -200,16 +311,19 @@ data: number of times each user sees each species in march and april.
 interpretation: proportion of user base seeing different frequencies of species.
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=100,fig.width=20, unit='in'}
-bangalore <- ebd_t20 %>%
-  filter(COUNTY == 'Bangalore' & YEAR == '2020') %>%
+stats <- select_sample(ebird) %>%
+  mutate(prepost = if_else(OBSERVATION.DATE < '2020-03-19', 'PRE', 'POST'))
+
+bangalore <- stats %>%
+  filter(COUNTY == 'Bangalore') %>%
   fastDummies::dummy_cols(select_columns='COMMON.NAME') %>%
-  group_by(OBSERVER.ID, YEARMONTH) %>%
+  group_by(OBSERVER.ID, prepost) %>%
   summarize_at(vars(starts_with('COMMON.NAME_')), sum, na.rm=T) %>%
   gather(species, number, starts_with('COMMON.NAME'))
 
 ggplot(data = bangalore, 
        aes(x = number, 
-           fill=YEARMONTH)) +
+           fill=prepost)) +
   geom_histogram(alpha=0.5, aes(y=..density..), position="identity") +
   facet_wrap(~species, ncol=4)
 
@@ -217,12 +331,12 @@ ggplot(data = bangalore,
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 
-trip_level$treatment <- as.numeric(trip_level$YEAR == 2020)
-trip_level$MONTH <- month(trip_level$OBSERVATION.DATE)
-trip_level$post <- as.numeric(trip_level$MONTH == 4)
-trip_level$treat_post <- trip_level$treatment*trip_level$post
+#trip_level$treatment <- as.numeric(trip_level$YEAR == 2020)
+#trip_level$MONTH <- month(trip_level$OBSERVATION.DATE)
+#trip_level$post <- as.numeric(trip_level$MONTH == 4)
+#trip_level$treat_post <- trip_level$treatment*trip_level$post
 
-est <- lm(s_richness ~ treat_post + treatment + post + DURATION.MINUTES + n_trips_day + 
-            c_code_11 + OBSERVATION.DATE + hour, data=trip_level)
+#est <- lm(s_richness ~ treat_post + treatment + post + DURATION.MINUTES + n_trips_day + 
+#            c_code_11 + OBSERVATION.DATE + hour, data=trip_level)
 
 ```
