@@ -1,0 +1,228 @@
+---
+title: 'Manuscript Tables and Figures'
+output: 
+  html_document:
+    number_sections: true
+author: 'Raahil Madhok'
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r "setup", include=FALSE}
+require("knitr")
+opts_knit$set(root.dir = '/Users/rmadhok/Dropbox (Personal)/covid/ebird_lockdown/data/')
+```
+
+```{r,include=F,warning=FALSE,message=FALSE}
+# Load Packages
+rm(list=ls())
+require(tidyverse)
+require(lubridate)
+require(kableExtra)
+require(lfe)
+require(cowplot)
+source('/Users/rmadhok/Dropbox (Personal)/covid/ebird_lockdown/scripts/R/select_functions.R')
+```
+
+# Overview
+Sample selection protocol:
+
+1. Stationary trips
+
+2. Complete checklists (report all species)
+
+3. Drop duplicates from group trips.
+
+4. Drop trips with 1 bird
+
+5. Duration between 5-240 mins
+
+## Full Sample (All Districts)
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+ebird <- readRDS('ebd_full.rds')
+
+full <- ebird %>%
+  group_by(YEARMONTH) %>%
+  summarize(`Num. Users` = n_distinct(OBSERVER.ID),
+            `Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
+            `Num. Species` = n_distinct(TAXONOMIC.ORDER),
+            `Num. Cities` = n_distinct(COUNTY))
+
+kable(full, caption = 'Monthly Statistics') %>% kable_styling() 
+
+```
+
+## Top 20 Cities
+City is not listed in eBird. Location identifiers include district, state, and coordinates. We select eBird cities that are in the top 20 by population density. Not all top 20 cities may be present in the eBird sample.
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+# Top 20 cities
+cities <- ebird %>%
+  group_by(COUNTY) %>%
+  summarize(state = first(STATE),
+            pop_density = first(POP_DENSITY)) %>%
+  filter(COUNTY != "") %>%
+  arrange(-pop_density) %>%
+  head(20)
+ebd_t20 <- merge(ebird, cities, by='COUNTY') #n=52,025
+
+kable(cities) %>% kable_styling()
+```
+
+## Monthly Statistics
+Discrepancy in number of users coming from users who birdwatched outside of top 20 cities in one of the month. For example, this could be a college student whose March trips were in a small town, and april trips were at his parents home in a big city.
+
+NOTE: should we do the sample restriction AFTER selecting city list?
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+stats <- ebd_t20 %>%
+  group_by(YEARMONTH) %>%
+  summarize(`Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
+            `Num. Cities` = n_distinct(COUNTY),
+            `Num. Users` = n_distinct(OBSERVER.ID),
+            `Num. Species` = n_distinct(TAXONOMIC.ORDER))
+
+stats <- as.data.frame(t(stats))
+
+kable(stats) %>% kable_styling()
+```
+
+## Trip Statistics
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+trip_level <- ebd_t20 %>% 
+  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
+  dplyr::select(COUNTY, STATE, OBSERVATION.DATE, TIME.OBSERVATIONS.STARTED,
+                OBSERVER.ID, SAMPLING.EVENT.IDENTIFIER, DURATION.MINUTES,
+                NUMBER.OBSERVERS, YEARMONTH, s_richness, YEAR, c_code_11)
+
+trip_stats <- trip_level %>%
+  group_by(YEARMONTH) %>%
+  summarize(`Trip Length` = mean(DURATION.MINUTES),
+            `Species Richness` = mean(s_richness, na.rm=T))
+trip_stats <- as.data.frame(t(trip_stats))
+
+kable(trip_stats) %>% kable_styling()
+```
+
+## Trip Statistics by City
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+trip_city <- trip_level %>%
+  group_by(COUNTY, YEARMONTH) %>%
+  summarize(`Trip Length` = mean(DURATION.MINUTES),
+            `Species Richness` = mean(s_richness, na.rm=T))
+#trip_city <- as.data.frame(t(trip_city))
+kable(trip_city) %>%
+  kable_styling(fixed_thead = T)
+```
+
+## Marginal Species by city
+Marginal species are species observed after lockdown which were not observed before lockdown. To implement: in each city, obtain list of species observed (across all users) in March and April 2020. Extract species in april list not in march list, and collect in a data frame. If fewer species in april, city will not be in final list. 
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+# Species List
+city_list <- cities$COUNTY
+marginal_species <- data.frame()
+for(city in city_list) {
+  
+  df_mar <- ebd_t20 %>%
+    filter(YEARMONTH == '2020-03' & COUNTY == city) %>%
+    distinct(COMMON.NAME, .keep_all = T) %>%
+    select('COMMON.NAME', 'COUNTY')
+  
+  df_apr <- ebd_t20 %>%
+    filter(YEARMONTH == '2020-04' & COUNTY == city) %>%
+    distinct(COMMON.NAME, .keep_all = T) %>%
+    select('COMMON.NAME', 'COUNTY')
+  
+  marginal <- anti_join(df_apr, df_mar, by='COMMON.NAME')
+  marginal_species <- rbind(marginal_species,marginal)
+}
+
+kable(marginal_species) %>%
+  kable_styling(fixed_thead = T)
+
+```
+
+# Event Study - Regression Disconinuity
+Each black point is the difference in species richness compared to the day of lockdown. 
+Specifically, we compute the number of days from each trip until the day of lockdown (negative values are days until lockdown, positive values are days after lockdown). We regress species richness on dummies for time until lockdown with date, hour, and state fixed effects. We also control for duration of trip and number of trips per day for each user. 
+
+NOTE: add user fixed effects? Absorbs a lot of variation. Users are already very similar. Main benefit is controlling for unobserved, innate differences across users. 
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+trip_level$lockdown <- as.Date('2020-03-25')
+trip_level$dif <- trip_level$OBSERVATION.DATE - trip_level$lockdown
+trip_level$TIME.OBSERVATIONS.STARTED <- hms(trip_level$TIME.OBSERVATIONS.STARTED)
+trip_level$hour <- hour(trip_level$TIME.OBSERVATIONS.STARTED)
+trip_level$state_code_2011 = substr(trip_level$c_code_11, 1, 3)
+trip_level <- trip_level %>%
+  group_by(OBSERVER.ID, OBSERVATION.DATE) %>%
+  mutate(n_trips_day = n_distinct(SAMPLING.EVENT.IDENTIFIER))
+
+window <- trip_level  %>%
+  filter(YEAR == '2020' & dif %in% -30:30) %>%
+  mutate(dif = str_replace(as.character(dif), '-','m'),
+         state_code_2011 = substr(c_code_11, 1, 3))
+
+window <- fastDummies::dummy_cols(window, select_columns = "dif")
+
+# Estimate
+est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_day + 
+            state_code_2011 + OBSERVATION.DATE + hour, 
+          data=window)
+
+# Tidy Model
+est_df <- broom::tidy(est, conf.int=T) %>% 
+  filter(str_detect(term, "^dif")) %>%
+  mutate(time = str_replace(term, 'dif', ''),
+         time = as.numeric(str_replace(time, 'm', '-')))
+
+ggplot(est_df, aes(x=time, y=estimate, group=1)) + 
+  geom_line() + 
+  geom_point(aes(color='Coefficient')) +
+  geom_ribbon(aes(ymin=conf.low, ymax=conf.high, fill='95% CI'), alpha=.5) +
+  geom_vline(xintercept=0, linetype='dashed') +
+  geom_hline(yintercept=0, linetype='dashed') +
+  geom_text(aes(x=-2, label="Lockdown", y=4), angle=90) +
+  ylab('Species Richness Relative to Lockdown\n') +
+  xlab('\n Days to Lockdown') +
+  scale_x_continuous(breaks = seq(-30, 30, by = 5)) +
+  scale_colour_manual("" , values = "black") +
+  scale_fill_manual("", values = "grey12") +
+  theme(panel.grid.minor = element_blank(),
+        text = element_text(size=13),
+        axis.line = element_blank(), 
+        axis.ticks = element_blank())
+```
+
+## Species Distributions (Bangalore Only)
+data: number of times each user sees each species in march and april.
+interpretation: proportion of user base seeing different frequencies of species.
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=100,fig.width=20, unit='in'}
+bangalore <- ebd_t20 %>%
+  filter(COUNTY == 'Bangalore' & YEAR == '2020') %>%
+  fastDummies::dummy_cols(select_columns='COMMON.NAME') %>%
+  group_by(OBSERVER.ID, YEARMONTH) %>%
+  summarize_at(vars(starts_with('COMMON.NAME_')), sum, na.rm=T) %>%
+  gather(species, number, starts_with('COMMON.NAME'))
+
+ggplot(data = bangalore, 
+       aes(x = number, 
+           fill=YEARMONTH)) +
+  geom_histogram(alpha=0.5, aes(y=..density..), position="identity") +
+  facet_wrap(~species, ncol=4)
+
+```
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
+
+trip_level$treatment <- as.numeric(trip_level$YEAR == 2020)
+trip_level$MONTH <- month(trip_level$OBSERVATION.DATE)
+trip_level$post <- as.numeric(trip_level$MONTH == 4)
+trip_level$treat_post <- trip_level$treatment*trip_level$post
+
+est <- lm(s_richness ~ treat_post + treatment + post + DURATION.MINUTES + n_trips_day + 
+            c_code_11 + OBSERVATION.DATE + hour, data=trip_level)
+
+```
