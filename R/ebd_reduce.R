@@ -4,12 +4,12 @@
 # DATE: May 21 2020 [created]
 
 # Directories
-READ.DIR <- '/Volumes/Backup Plus/research/ebird_lockdown'
-SAVE.DIR <- '/Users/rmadhok/Dropbox (Personal)/covid/ebird_lockdown/'
+rm(list=ls())
+READ.DIR <- '/Volumes/Backup Plus/research/ebird_lockdown/'
+SAVE.DIR <- '/Users/rmadhok/Dropbox (Personal)/covid/ebird_lockdown/data/'
 setwd(READ.DIR)
 
 # Load Packages
-rm(list=ls())
 require(data.table)
 require(tidyverse)
 require(lubridate)
@@ -32,11 +32,10 @@ ebird_pre <- ebird %>%
   summarize(n_trips_pld = n_distinct(SAMPLING.EVENT.IDENTIFIER))
 ebird <- merge(ebird, ebird_pre, by='OBSERVER.ID', all.x = T)
 
-# Reduce (n=1,586,974)
+# Window: 24 days before and after Mar 24 (n=1,586,974)
 ebird <- ebird %>%
   filter(YEARMONTH %in% c('2019-03', '2019-04',
                           '2020-03', '2020-04'))
 
 # Save (rds smallest filesize)
-saveRDS(ebird, paste(SAVE.DIR, '/data/ebd_lockdown_raw.rds', 
-                       sep=''))
+saveRDS(ebird, paste(SAVE.DIR, 'ebd_lockdown_raw.rds', sep=''))

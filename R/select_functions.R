@@ -36,10 +36,10 @@ select_users <- function(df, before, after, lockdown) {
   ## df_select: subset of df restricted to users meeting selection criteria.
   
   user_list <- df %>%
-    mutate(prepost = if_else(OBSERVATION.DATE < lockdown, 'PRE', 'POST')) %>%
+    mutate(prepost = if_else(OBSERVATION.DATE <= lockdown, 'PRE', 'POST')) %>%
     group_by(OBSERVER.ID, prepost) %>%
-    summarize(n_days = n_distinct(OBSERVATION.DATE)) %>%
-    spread(prepost, n_days) %>%
+    summarize(n_trips = n_distinct(SAMPLING.EVENT.IDENTIFIER)) %>%
+    spread(prepost, n_trips) %>%
     filter(PRE >= before & POST >= after) %>%
     dplyr::select(OBSERVER.ID)
   
@@ -54,13 +54,13 @@ select_sample <- function(df,
                           after = 2, 
                           num_cities = NULL, 
                           home = FALSE,
-                          lockdown = '2020-03-19') {
+                          lockdown = '2020-03-24') {
   
   # Function: select_sample
   ## Inputs: 
   ### df: a data frame - ebird
-  ### before: numeric; observer birdwatched on 'before' days before lockdown
-  ### after: numeric; observer birdwatched on 'after' days after lockdown
+  ### before: numeric; observer logged 'before' trips before lockdown
+  ### after: numeric; observer logged 'after' trips after lockdown
   ### num_cities: numeric; select observations in top 'num_cities' cities by pop. density
   ### home: TRUE/FALSE; select observations from home
   ## lockdown: date of lockdown
@@ -81,7 +81,13 @@ select_sample <- function(df,
   
   # Only Home not inputted
   if(isFALSE(home) & !is.null(num_cities)) {
+
+    # Select users from top cities meeting participation constraint
+    #sample <- select_users(df, before, after, lockdown)
     
+    # Select top cities
+    #sample <- select_cities(sample, num_cities) 
+  
     # Select top cities
     sample <- select_cities(df, num_cities) 
     
@@ -106,14 +112,20 @@ select_sample <- function(df,
   # All arguments given
   if(isTRUE(home) & !is.null(num_cities)) {
     
+    # Select users from top cities meeting participation constraint
+    #sample <- select_users(df, before, after, lockdown)
+    
+    # Select top cities
+    #sample <- select_cities(sample, num_cities) 
+    
     # Select top X cities
     sample <- select_cities(df, num_cities)
     
-    # Select users from top X cities meeting participation constraint
-    sample <- select_users(sample, before, after, lockdown)
-    
-    # Select users at home
+    # Select users at home in top X cities
     sample <- filter(sample, LOCALITY.TYPE == 'P')
+    
+    # Select users at home in top X cities meeting participation constraint
+    sample <- select_users(sample, before, after, lockdown)
     
     return(sample)
     
@@ -126,7 +138,7 @@ event_study <- function(df,
                         after = 2, 
                         num_cities = NULL, 
                         home = FALSE,
-                        lockdown = '2020-03-19',
+                        lockdown = '2020-03-24',
                         user_fe = F) {
   
   # Select Sample
@@ -137,17 +149,14 @@ event_study <- function(df,
     distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
     dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
                   DURATION.MINUTES, s_richness, COUNTY, STATE, HOUR, n_trips_pld) %>%
-    group_by(OBSERVER.ID, OBSERVATION.DATE) %>%
-    mutate(n_trips_day = n_distinct(SAMPLING.EVENT.IDENTIFIER),
-           dif = OBSERVATION.DATE - as.Date(lockdown)) %>%
-    filter(dif %in% -30:30) %>%
-    mutate(dif = str_replace(as.character(dif), '-','m')) %>%
-    fastDummies::dummy_cols(select_columns = "dif")
+    mutate(dif = OBSERVATION.DATE - as.Date(lockdown)) %>%
+    filter(dif %in% -25:25) %>%
+    mutate(dif = str_replace(as.character(dif), '-','m'))
   
   # Estimate
   if(isFALSE(user_fe)) {
-  est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_day +
-              n_trips_pld + COUNTY + OBSERVATION.DATE + HOUR, 
+  est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_pld + 
+              OBSERVATION.DATE + COUNTY + HOUR, 
             data = sample)
   
   # tidy
@@ -160,8 +169,8 @@ event_study <- function(df,
   }
   
   if(isTRUE(user_fe)) {
-    est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_day +
-               OBSERVER.ID + COUNTY + OBSERVATION.DATE + HOUR, 
+    est <- lm(s_richness ~ dif + DURATION.MINUTES + 
+                OBSERVER.ID + OBSERVATION.DATE + COUNTY + HOUR, 
               data = sample)
     
     # tidy

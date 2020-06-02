@@ -10,7 +10,6 @@ SHP <- '/Users/rmadhok/Dropbox (Personal)/IndiaPowerPlant/data/'
 setwd(DIR)
 
 # Load Packages
-require(data.table)
 require(tidyverse)
 require(sf)
 
@@ -24,8 +23,7 @@ india_districts <- st_read(paste(SHP, "maps/india-district", sep=""),
                            'SDE_DATA_IN_F7DSTRBND_2011', 
                            stringsAsFactors = F) %>%
   select('c_code_11', 'TOT_POP', 'TOT_AREA', 'NAME', 'geometry') %>%
-  mutate(POP_DENSITY = TOT_POP / TOT_AREA) %>%
-  rename(DIST_NAME = NAME)
+  mutate(POP_DENSITY = TOT_POP / TOT_AREA)
 
 # 2. Filter eBird -------------------------------
 
@@ -52,11 +50,13 @@ ebd_use <- filter(ebd_use, DURATION.MINUTES >= 5 & DURATION.MINUTES <= 240)
 #ebd_use$OBSERVATION.COUNT <- as.numeric(ebd_use$OBSERVATION.COUNT)
 
 # Species diveristy per trip (can add shannon and simpson)
-# e. Drop if checklist has 1 bird (see Walker & Tayler, 2017) n=482,047
 ebd_use <- ebd_use %>% 
   group_by(SAMPLING.EVENT.IDENTIFIER) %>% 
   mutate(s_richness = n()) %>%
-  filter(s_richness > 1)
+  ungroup()
+
+# e. Drop if checklist has 1 bird (see Walker & Tayler, 2017) n=482,047
+ebd_use <- filter(ebd_use, s_richness > 1)
 
 # Keep selected columns
 ebd_use <- select(ebd_use, 'TAXONOMIC.ORDER', 'COMMON.NAME', 'SCIENTIFIC.NAME', 
@@ -69,17 +69,14 @@ ebd_use <- select(ebd_use, 'TAXONOMIC.ORDER', 'COMMON.NAME', 'SCIENTIFIC.NAME',
 # 2. Overlay District -------------------------
 
 # Spatial merge census code and population
-ebd_use <- as.data.frame(st_join(st_as_sf(ebd_use, 
-                                        coords = c('LONGITUDE', 'LATITUDE'), 
-                                        crs = 4326), 
-                               india_districts, 
-                               join = st_intersects))
+ebd_sf <- st_as_sf(ebd_use, coords = c('LONGITUDE', 'LATITUDE'), crs = 4326)
+ebd_use <- as.data.frame(st_join(ebd_sf, india_districts, join = st_intersects))
 
 # drop sightings outside map (n=481,772)
 ebd_use <- filter(ebd_use, !is.na(c_code_11))
 
 # Missing District names
-ebd_use$COUNTY[ebd_use$COUNTY == ""] <- ebd_use$DIST_NAME[ebd_use$COUNTY == ""]
+ebd_use$COUNTY[ebd_use$COUNTY == ""] <- ebd_use$NAME[ebd_use$COUNTY == ""]
 
 # Save
 saveRDS(ebd_use, 'ebd_full.rds')
