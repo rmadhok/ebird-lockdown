@@ -16,7 +16,7 @@ select_cities <- function(df, num) {
     group_by(COUNTY) %>%
     summarize(state = first(STATE),
               pop_density = first(POP_DENSITY)) %>%
-    arrange(-pop_density) %>%
+    arrange(desc(pop_density)) %>%
     head(num)
   df_cities <- merge(df, city_list, by = 'COUNTY')
   
@@ -81,12 +81,6 @@ select_sample <- function(df,
   
   # Only Home not inputted
   if(isFALSE(home) & !is.null(num_cities)) {
-
-    # Select users from top cities meeting participation constraint
-    #sample <- select_users(df, before, after, lockdown)
-    
-    # Select top cities
-    #sample <- select_cities(sample, num_cities) 
   
     # Select top cities
     sample <- select_cities(df, num_cities) 
@@ -111,12 +105,6 @@ select_sample <- function(df,
   
   # All arguments given
   if(isTRUE(home) & !is.null(num_cities)) {
-    
-    # Select users from top cities meeting participation constraint
-    #sample <- select_users(df, before, after, lockdown)
-    
-    # Select top cities
-    #sample <- select_cities(sample, num_cities) 
     
     # Select top X cities
     sample <- select_cities(df, num_cities)
@@ -148,17 +136,18 @@ event_study <- function(df,
   sample <- sample %>%  
     distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
     dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                  DURATION.MINUTES, s_richness, COUNTY, STATE, HOUR, n_trips_pld) %>%
+                  DURATION.MINUTES, s_richness, COUNTY, STATE, PROTOCOL.TYPE,
+                  HOUR, n_trips_pld, rain, temperature) %>%
     mutate(dif = OBSERVATION.DATE - as.Date(lockdown)) %>%
-    filter(dif %in% -25:25) %>%
     mutate(dif = str_replace(as.character(dif), '-','m'))
   
   # Estimate
   if(isFALSE(user_fe)) {
-  est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_pld + 
-              OBSERVATION.DATE + COUNTY + HOUR, 
+    
+  est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_pld + rain +
+              OBSERVATION.DATE + COUNTY + HOUR + PROTOCOL.TYPE, 
             data = sample)
-  
+
   # tidy
   est_df <- broom::tidy(est, conf.int = T) %>% 
     filter(str_detect(term, "^dif")) %>%
@@ -169,10 +158,10 @@ event_study <- function(df,
   }
   
   if(isTRUE(user_fe)) {
-    est <- lm(s_richness ~ dif + DURATION.MINUTES + 
-                OBSERVER.ID + OBSERVATION.DATE + COUNTY + HOUR, 
+    est <- lm(s_richness ~ dif + DURATION.MINUTES + rain +
+                OBSERVER.ID + OBSERVATION.DATE + HOUR + PROTOCOL.TYPE, 
               data = sample)
-    
+
     # tidy
     est_df <- broom::tidy(est, conf.int = T) %>% 
       filter(str_detect(term, "^dif")) %>%
@@ -182,4 +171,44 @@ event_study <- function(df,
     return(est_df)
   }
  
+}
+
+did <- function(df,
+                before = 2,
+                after = 2,
+                num_cities = NULL,
+                home = F,
+                lockdown = NULL){
+  
+  # 2019 Slice
+  df_19 <- df[df$YEAR == 2019 & df$OBSERVATION.DATE <= '2019-04-17',]
+  df_19 <- select_sample(df_19, before, after, num_cities, home, lockdown='2019-03-24')
+  df_19 <- df_19 %>%
+    distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
+    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER,
+                  YEAR, DURATION.MINUTES, s_richness, COUNTY, STATE, PROTOCOL.TYPE, 
+                  HOUR, n_trips_pld, rain, temperature) %>%
+    mutate(prepost = if_else(OBSERVATION.DATE <= '2019-03-24', 'PRE', 'POST'))
+  
+  # 2020 slice
+  df_20 <- df[df$YEAR == 2020 & df$OBSERVATION.DATE <= '2020-04-17' &
+                df$OBSERVATION.DATE != '2020-03-22',]
+  df_20 <- select_sample(df_20, before, after, num_cities, home, lockdown='2020-03-24')
+  df_20 <- df_20 %>%
+    distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
+    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
+                  YEAR, DURATION.MINUTES, s_richness, COUNTY, STATE, PROTOCOL.TYPE,
+                  HOUR, n_trips_pld, rain, temperature) %>%
+    mutate(prepost = if_else(OBSERVATION.DATE <= '2020-03-24', 'PRE', 'POST'))
+  
+  # stack
+  sample <- rbind(df_19, df_20)
+  
+  # Treatment
+  sample$Treatment <- as.numeric(sample$YEAR == 2020)
+  sample$Post <- as.numeric(sample$prepost == 'POST')
+  sample$TreatPost <- sample$Treatment*sample$Post
+  
+  return(sample)
+  
 }

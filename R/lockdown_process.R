@@ -5,7 +5,7 @@
 
 # Directories
 rm(list=ls())
-DIR <- '/Users/rmadhok/Dropbox (Personal)/covid/ebird_lockdown/data'
+DIR <- '/Users/rmadhok/Dropbox (Personal)/ebird_lockdown/data/'
 SHP <- '/Users/rmadhok/Dropbox (Personal)/IndiaPowerPlant/data/'
 setwd(DIR)
 
@@ -16,7 +16,7 @@ require(sf)
 # 1. Read data -------------------------------
 
 # Load (n=1,586,974)
-ebird <- readRDS('ebd_lockdown_raw.rds')
+ebird <- as.data.frame(readRDS('ebd_lockdown_raw.rds'))
 
 # district shapefile
 india_districts <- st_read(paste(SHP, "maps/india-district", sep=""), 
@@ -28,7 +28,7 @@ india_districts <- st_read(paste(SHP, "maps/india-district", sep=""),
 # 2. Filter eBird -------------------------------
 
 # a. Stationary trips 
-ebd_use <- filter(ebird, PROTOCOL.TYPE == 'Stationary') # n=572,605
+ebd_use <- filter(ebird, PROTOCOL.TYPE == 'Stationary' | PROTOCOL.TYPE == 'Traveling') # n=572,605
 
 # b. Complete checklists (# n = 564,547)
 ebd_use <- filter(ebd_use, ALL.SPECIES.REPORTED == 1)
@@ -49,14 +49,13 @@ ebd_use <- filter(ebd_use, DURATION.MINUTES >= 5 & DURATION.MINUTES <= 240)
 #ebd_use$OBSERVATION.COUNT[ebd_use$OBSERVATION.COUNT == 'X'] <- NA
 #ebd_use$OBSERVATION.COUNT <- as.numeric(ebd_use$OBSERVATION.COUNT)
 
-# Species diveristy per trip (can add shannon and simpson)
+# Species diveristy per trip
 ebd_use <- ebd_use %>% 
   group_by(SAMPLING.EVENT.IDENTIFIER) %>% 
-  mutate(s_richness = n()) %>%
-  ungroup()
+  mutate(s_richness = n())
 
 # e. Drop if checklist has 1 bird (see Walker & Tayler, 2017) n=482,047
-ebd_use <- filter(ebd_use, s_richness > 1)
+ebd_use <- as.data.frame(filter(ebd_use, s_richness > 1))
 
 # Keep selected columns
 ebd_use <- select(ebd_use, 'TAXONOMIC.ORDER', 'COMMON.NAME', 'SCIENTIFIC.NAME', 
@@ -64,19 +63,37 @@ ebd_use <- select(ebd_use, 'TAXONOMIC.ORDER', 'COMMON.NAME', 'SCIENTIFIC.NAME',
                   'LATITUDE', 'LONGITUDE', 'OBSERVATION.DATE', 'TIME.OBSERVATIONS.STARTED', 
                   'OBSERVER.ID', 'SAMPLING.EVENT.IDENTIFIER', 'DURATION.MINUTES', 
                   'NUMBER.OBSERVERS', 'GROUP.IDENTIFIER', 'YEARMONTH', 'YEAR', 'HOUR',
-                  'n_trips_pld', 's_richness')
+                  'PROTOCOL.TYPE','n_trips_pld', 's_richness')
 
 # 2. Overlay District -------------------------
 
 # Spatial merge census code and population
-ebd_sf <- st_as_sf(ebd_use, coords = c('LONGITUDE', 'LATITUDE'), crs = 4326)
-ebd_use <- as.data.frame(st_join(ebd_sf, india_districts, join = st_intersects))
+ebd_use <- as.data.frame(st_join(st_as_sf(ebd_use, 
+                                          coords = c('LONGITUDE', 'LATITUDE'), 
+                                          crs = 4326), 
+                                 india_districts, join = st_intersects))
 
 # drop sightings outside map (n=481,772)
 ebd_use <- filter(ebd_use, !is.na(c_code_11))
 
 # Missing District names
 ebd_use$COUNTY[ebd_use$COUNTY == ""] <- ebd_use$NAME[ebd_use$COUNTY == ""]
+
+# add rain
+rain <- read.csv(paste(DIR, '/india_rain_gpm.csv', sep='')) %>%
+  dplyr::select('c_code_11', 'date', 'rain') %>%
+  rename(OBSERVATION.DATE = date)
+ebd_use <- merge(ebd_use, rain, 
+               by = c('c_code_11', 'OBSERVATION.DATE'), 
+               all.x = T)
+
+# Add temperature
+temperature <- read.csv(paste(DIR, '/india_temp_modis.csv', sep='')) %>%
+  dplyr::select('c_code_11', 'date', 'temperature') %>%
+  rename(OBSERVATION.DATE = date)
+ebd_use <- merge(ebd_use, temperature, 
+                 by = c('c_code_11', 'OBSERVATION.DATE'), 
+                 all.x = T)
 
 # Save
 saveRDS(ebd_use, 'ebd_full.rds')

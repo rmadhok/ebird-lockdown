@@ -5,8 +5,8 @@
 
 # Directories
 rm(list=ls())
-READ.DIR <- '/Volumes/Backup Plus/research/ebird_lockdown/'
-SAVE.DIR <- '/Users/rmadhok/Dropbox (Personal)/covid/ebird_lockdown/data/'
+READ.DIR <- '/Volumes/Backup Plus/research/ebird_lockdown/ebird/'
+SAVE.DIR <- '/Users/rmadhok/Dropbox (Personal)/ebird_lockdown/data/'
 setwd(READ.DIR)
 
 # Load Packages
@@ -32,7 +32,7 @@ ebird_pre <- ebird %>%
   summarize(n_trips_pld = n_distinct(SAMPLING.EVENT.IDENTIFIER))
 ebird <- merge(ebird, ebird_pre, by='OBSERVER.ID', all.x = T)
 
-# Window: 24 days before and after Mar 24 (n=1,586,974)
+# March and April (n=1,586,974)
 ebird <- ebird %>%
   filter(YEARMONTH %in% c('2019-03', '2019-04',
                           '2020-03', '2020-04'))

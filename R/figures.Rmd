@@ -26,7 +26,7 @@ source('/Users/rmadhok/Dropbox (Personal)/ebird_lockdown/scripts/R/select_functi
 # Overview
 Sample selection protocol:
 
-1. Stationary trips
+1. Stationary and Travelling trips
 
 2. Complete checklists (report all species)
 
@@ -42,13 +42,13 @@ Overall Notes
 
 2. We select cities first, and then users. This gives us the same users in each pre/post period (in 2020) with the caveat that users mobility is limited to the top X cities.  
 
-3. Diff-in-diff results consistently positive and strong. Event study somewhat unstable depending on lockdown day. Why is DID counterfactual better?  
+3. Few people take stationary trips pre-lockdown.
 
 ## Birdwatching Activity in All Cities
-Summary Stats for 2020 including users who participated in at least 2 days before and after lockdown.
+Summary Stats for 2020 for all users. Number of users is the count of unique user ID's on a given day.  
 
 ```{r,include=F,warning=FALSE,message=FALSE}
-# 2020 sample
+# Read
 ebird_full <- readRDS('ebd_full.rds')
 
 # 24 days before and after lockdown (Mar 24 2020)
@@ -57,20 +57,22 @@ ebird <- ebird_full[ebird_full$YEAR == 2020 &
 ```
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=3,fig.width=8}
-# Number of Users by day
-#stats <- select_sample(ebird)
+# Usage by Day
 stats <- ebird %>%
-  group_by(OBSERVATION.DATE) %>%
+  group_by(OBSERVATION.DATE, PROTOCOL.TYPE) %>%
   summarize(`Num. Users` = n_distinct(OBSERVER.ID),
             `Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
             `Num. Species` = n_distinct(TAXONOMIC.ORDER)) %>%
   gather(key, value, starts_with('N'))
 
-ggplot(stats, aes(x=OBSERVATION.DATE, y=value)) +
-  geom_line() + 
+ggplot(stats, aes(x=OBSERVATION.DATE, y=value, group=PROTOCOL.TYPE)) +
+  geom_line(aes(color=PROTOCOL.TYPE)) + 
   labs(title = 'Birdwatching Activity in all Cities', y='') +
   geom_vline(xintercept=as.numeric(as.Date("2020-03-24")), linetype='dashed') +
   scale_x_date(date_breaks = '10 days', date_labels = '%b\n%d') +
+  scale_colour_viridis_d() +
+  labs(color='Trip Type') +
+  theme_bw() +
   theme(panel.grid.minor = element_blank(), 
         axis.line = element_blank(), 
         axis.title.x = element_blank()) +
@@ -78,24 +80,25 @@ ggplot(stats, aes(x=OBSERVATION.DATE, y=value)) +
 ```
 
 ## Birdwatching Activity in Top 4 Cities
-
+Number of users is the count of unique user ID's on a given day. Stationary trips are uncommon pre-COVID. 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=10,fig.width=8}
-# By City ## WHAT IS GOING ON??
-#stats <- select_sample(ebird, num_cities = 20)
-#stats <- select_cities(ebird, num=20)
+# By City
 stats <- ebird %>%
-  group_by(COUNTY, OBSERVATION.DATE) %>%
+  group_by(COUNTY, OBSERVATION.DATE, PROTOCOL.TYPE) %>%
   summarize(`Num. Users` = n_distinct(OBSERVER.ID),
             `Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
             `Num. Species` = n_distinct(TAXONOMIC.ORDER)) %>%
   gather(key, value, starts_with('N'))
 stats <- filter(stats, COUNTY %in% c('Mumbai', 'Bangalore', 'Chennai', 'Kolkata'))
 
-ggplot(stats, aes(x=OBSERVATION.DATE, y=value)) +
-  geom_line() +
+ggplot(stats, aes(x=OBSERVATION.DATE, y=value, group=PROTOCOL.TYPE)) +
+  geom_line(aes(color=PROTOCOL.TYPE)) +
   labs(title = 'Birdwatching Activity in Four Major Cities', y='') +
   geom_vline(xintercept=as.numeric(as.Date("2020-03-24")), linetype='dashed') +
   scale_x_date(date_breaks = '10 days', date_labels = '%b\n%d') +
+  scale_colour_viridis_d() +
+  labs(color='Trip Type') +
+  theme_bw() +
   theme(panel.grid.minor = element_blank(), 
         axis.line = element_blank(), 
         axis.title.x = element_blank()) +
@@ -103,9 +106,10 @@ ggplot(stats, aes(x=OBSERVATION.DATE, y=value)) +
 ```
 
 ## Top 20 Cities
-This is the subset of eBird observations meeting the pariticipation criteria in the top 20 Indian cities by population size. Note that not all top 20 cities may be present in eBird. 
+Subset of top 20 cities in which users meeting participation constraint are present.  
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
+ebird <- filter(ebird, OBSERVATION.DATE != '2020-03-22')
 stats <- select_sample(ebird, num_cities = 20)
 stats <- stats %>% 
   group_by(COUNTY) %>%
@@ -113,19 +117,18 @@ stats <- stats %>%
   arrange(-POP_DENSITY)
 
 kable(stats, 
-      caption = 'eBird Cities in Top 20 by Population Density') %>% 
+      caption = 'Subset of Top 20 Cities where power users present') %>% 
   kable_styling()
 ```
 
 ## Pre-Post Lockdown Statistics
-This table shows aggregate birdwatching activity in the full sample among users who birdwatched on at least 2 days before and after lockdown (March 24, 2020). 
+This table shows birdwatching activity among users who took at least 2 trips before and after lockdown. Mar 22 trips are dropped.
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-
 # All Cities
 stats <- select_sample(ebird)
 stats <- stats %>%
   mutate(PREPOST = if_else(
-    OBSERVATION.DATE < '2020-03-24', 'Before', 'After')
+    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
     ) %>%
   group_by(PREPOST) %>%
   summarize(`Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
@@ -140,7 +143,7 @@ kable(stats, caption = 'All Cities') %>% kable_styling()
 stats <- select_sample(ebird, num_cities = 20)
 stats <- stats %>%
   mutate(PREPOST = if_else(
-    OBSERVATION.DATE < '2020-03-24', 'Before', 'After')
+    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
     ) %>%
   group_by(PREPOST) %>%
   summarize(`Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
@@ -153,21 +156,20 @@ kable(stats, caption = 'Top 20') %>% kable_styling()
 ```
 
 ## Trip Statistics
-This table shows trip-level statistics before and after lockdown.
+This table shows trip statistics before and after lockdown among users meeting the participation constraint.
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
-
-# Full Sample
+# All Cities
 stats <- select_sample(ebird)
 stats <- stats %>%  
   distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
   dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
                 DURATION.MINUTES, s_richness, COUNTY) %>%
   mutate(PREPOST = if_else(
-    OBSERVATION.DATE < '2020-03-24', 'Before', 'After')
+    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
     ) %>%
   group_by(PREPOST) %>%
-  summarize(`Trip Length` = mean(DURATION.MINUTES),
+  summarize(`Trip Length` = mean(DURATION.MINUTES, na.rm=T),
             `Mean Species Richness` = mean(s_richness, na.rm=T),
             `Median Species Richness` = median(s_richness, na.rm=T)) %>%
   arrange(desc(PREPOST))
@@ -181,10 +183,10 @@ stats <- stats %>%
   dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
                 DURATION.MINUTES, s_richness, COUNTY) %>%
   mutate(PREPOST = if_else(
-    OBSERVATION.DATE < '2020-03-24', 'Before', 'After')
+    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
     ) %>%
   group_by(PREPOST) %>%
-  summarize(`Trip Length` = mean(DURATION.MINUTES),
+  summarize(`Trip Length` = mean(DURATION.MINUTES, na.rm=T),
             `Mean Species Richness` = mean(s_richness, na.rm=T),
             `Median Species Richness` = median(s_richness, na.rm=T)) %>%
   arrange(desc(PREPOST))
@@ -192,24 +194,40 @@ stats <- stats %>%
 kable(stats, caption='Top 20') %>% kable_styling()
 
 # By City
-stats <- select_sample(ebird, num_cities = 20)
-stats <- stats %>%  
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                DURATION.MINUTES, s_richness, COUNTY) %>%
-  mutate(PREPOST = if_else(
-    OBSERVATION.DATE < '2020-03-24', 'Before', 'After')
-    ) %>%
-  group_by(COUNTY, PREPOST) %>%
-  summarize(`Trip Length` = mean(DURATION.MINUTES),
-            `Mean Species Richness` = mean(s_richness, na.rm=T),
-            `Median Species Richness` = median(s_richness, na.rm=T)) %>%
-  filter(!(COUNTY %in% c('Central Delhi', 'New Delhi')))
+stats1 <- select_sample(ebird, num_cities = 20) %>% 
+  mutate(label = 'All Trips')
+stats2 <- ebird %>% 
+  filter(PROTOCOL.TYPE == 'Stationary') %>% 
+  select_sample(num_cities=20) %>%
+  mutate(label = 'Stationary Trips')
+stats <- rbind(stats1, stats2)
+rm(list=c('stats1','stats2'))
 
-ggplot(stats, aes(x=factor(PREPOST), y=`Mean Species Richness`)) + 
-  geom_bar(stat = 'identity') + 
-  scale_x_discrete(limits=c('Before','After')) +
-  labs(title = 'Mean Species Richness Per Trip') +
+stats <- stats %>%  
+  distinct(label, SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
+  dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
+                DURATION.MINUTES, s_richness, COUNTY, label) %>%
+  mutate(PREPOST = if_else(
+    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
+    ) %>%
+  group_by(label, COUNTY, PREPOST) %>%
+  summarize(mean = mean(s_richness, na.rm=T),
+            sd = sd(s_richness, na.rm=T),
+            n = n(),
+            se = sd/sqrt(n)) %>%
+  filter(COUNTY %in% c('Bangalore', 'Chennai', 'Kolkata', 'Mumbai'))
+
+ggplot(stats, aes(x=factor(label), 
+                  y=mean, 
+                  fill=forcats::fct_rev(PREPOST))) + 
+  geom_bar(stat = 'identity', position='dodge') + 
+  geom_errorbar(aes(ymin = mean - se, ymax = mean + se),
+                position = position_dodge2(padding = 0.8)) +
+  labs(title = 'Species Richness Per Trip Before and After Lockdown', 
+       y='Mean Species Richness Per Trip',
+       fill='') +
+  scale_fill_viridis_d() +
+  theme_bw() +
   theme(panel.grid.minor = element_blank(), 
         axis.line = element_blank(), 
         axis.title.x = element_blank(),
@@ -218,12 +236,14 @@ ggplot(stats, aes(x=factor(PREPOST), y=`Mean Species Richness`)) +
 ```
 
 ## Marginal Species by city
-Marginal species are species observed after lockdown which were not observed before lockdown. To implement: in each city, obtain list of species observed (across all users) in before and after lockdown. Extract species in "after" list not in "before" list, and collect in a data frame. If fewer species after, city will not be in final list. 
+Marginal species are species observed after lockdown which were not observed before lockdown. To implement: in each city, obtain list of species before and after lockdown observed by users meeting participation cosntraint. Extract species in "after" list not in "before" list.
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
 # Species List
-stats <- select_sample(ebird, num_cities = 20)
-stats$prepost <- if_else(stats$OBSERVATION.DATE < '2020-03-24', 'PRE', 'POST')
+stats <- ebird %>% 
+  filter(PROTOCOL.TYPE == 'Stationary') %>%
+  select_sample(num_cities = 20, home=T)
+stats$prepost <- if_else(stats$OBSERVATION.DATE <= '2020-03-24', 'PRE', 'POST')
 city_list <- distinct(stats, COUNTY)$COUNTY
 marginal_species <- data.frame()
 
@@ -249,48 +269,46 @@ kable(marginal_species) %>%
 rm(list=c('city_list', 'df_post', 'df_pre', 'marginal'))
 ```
 
-# Event Study (March 24 Lockdown)
+# Event Study
 We estimate:
 
-$$ SR_{ijtd} = \sum_{e=-24, e\neq0}^{24} 1(t-LD=e)\beta_{e} + X_{ijdt} + \gamma_{t} + \mu_{d} + \epsilon_{ijtd}$$
-where $SR_{ijtd}$ is species richness observed by user i on trip j on date t in district d. Each coefficient $\beta_{e}$ captures species richness relative to the day of lockdown (LD). In the preferred specification, LD = March 24, 2020 and this date is normalized to zero and omitted so that it describes the reference period. If the timing of lockdown is exogenous to pre-period outcomes, then $\beta_{e}$ should be zero for all $e<0$. $\gamma_{t}$ are a set of temporal controls and include date fixed effects and hour fixed effects. $\mu_{d}$ are city fixed effects. $X_{ijdt}$ is a vector of controls and includes: duration of trip and user $i$'s experience, measured as the number of trips he/she has taken since January 2019. 
+$$ SR_{ijtd} = \sum_{e=-24, e\neq0}^{24} 1(t-LD=e)\beta_{e} + X_{ijdt} + \theta_{i} + \gamma_{t} + \epsilon_{ijtd}$$
+where $SR_{ijtd}$ is species richness observed by user i on trip j on date t in district d. Each coefficient $\beta_{e}$ captures species richness relative to the day of lockdown (LD). In the preferred specification, LD = March 24, 2020 and this date is normalized to zero and omitted so that it describes the reference period. If the timing of lockdown is exogenous to pre-period outcomes, then $\beta_{e}$ should be zero for all $e<0$.$\theta_{i}$ is a user fixed effect and controls for observer bias, experience, and innate ability. Since users primarily remain in the same city before and after lockdown, we do not include a district fixed effect. $\gamma_{t}$ are a set of temporal controls and include date fixed effects and hour fixed effects. $X_{ijdt}$ is a vector of controls including trip duration and daily temperature and precipitation in district d. 
 
-Notes: 
+Note:
 
-1. We see action around pilot lockdown, not as much around official lockdown. Suggests people responded to the former. 
+1. We start seeing increases in species diversity post-lockdown when we narrow in on urban environments. As we increase number cities, this adds population-sparse places so the effect is dampned. 
 
-2. We start seeing increases in species diversity post-lockdown when we narrow in on urban environments. As we increase allowable cities, this adds population-sparse places so the effect is dampned. 
-
-3. Larger increases in post-lockdown species diversity as we increase the participation constraint (e.g. 10 days before/after curfew)
+2. Larger increases in post-lockdown species diversity as we increase the participation constraint (e.g. 10 days before/after curfew)
 
 
-```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=15,fig.width=12}
+```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=10,fig.width=12}
 stats <- data.frame()
 
-# All Cities, 2 days before/after
+# All Cities, 2 trips before/after
 coefs <- event_study(ebird, user_fe=T)
-coefs$type <- 'Cities: all, participation: 2 days, LD: Mar 24'
+coefs$type <- 'Cities: all, participation: 2 trips, LD: Mar 24'
 stats <- rbind(stats, coefs)
 
-# Top 20, 2 days before/after
+# Top 20, 2 trips before/after
 coefs <- event_study(ebird, num_cities = 20, user_fe=T)
-coefs$type <- 'Cities: 20, participation: 2 days, LD: Mar 24'
+coefs$type <- 'Cities: 20, participation: 2 trips, LD: Mar 24'
 stats <- rbind(stats, coefs)
 
-# Top 20, 5 days before/after
+# Top 20, 5 trips before/after
 coefs <- event_study(ebird, num_cities = 20, before = 5, after = 5, user_fe=T)
-coefs$type <- 'Cities: 20, participation: 5 days, LD: Mar 24'
+coefs$type <- 'Cities: 20, participation: 5 trips, LD: Mar 24'
 stats <- rbind(stats, coefs)
 
-# Top 20, 10 days before/after
+# Top 20, 10 trips before/after
 coefs <- event_study(ebird, num_cities = 20, before = 10, after = 10, user_fe=T)
-coefs$type <- 'Cities: 20, participation: 10 days, LD: Mar 24'
+coefs$type <- 'Cities: 20, participation: 10 trips, LD: Mar 24'
 stats <- rbind(stats, coefs)
 
 # Top 50, 5 days before/after
-coefs <- event_study(ebird, num_cities = 50, before = 5, after = 5, user_fe=T)
-coefs$type <- 'Cities: 50, participation: 5 days, LD: Mar 24'
-stats <- rbind(stats, coefs)
+#coefs <- event_study(ebird, num_cities = 50, before = 5, after = 5, user_fe=T)
+#coefs$type <- 'Cities: 50, participation: 5 trips, LD: Mar 24'
+#stats <- rbind(stats, coefs)
 
 ggplot(stats, aes(x=time, y=estimate, group=1)) + 
   geom_line() + 
@@ -316,8 +334,8 @@ data: number of times each user sees each species before and after lockdown.
 interpretation: proportion of user base seeing different frequencies of species.
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=100,fig.width=20, unit='in'}
-stats <- select_sample(ebird) %>%
-  mutate(prepost = if_else(OBSERVATION.DATE < '2020-03-24', 'PRE', 'POST'))
+stats <- select_sample(ebird)
+stats$prepost <- if_else(stats$OBSERVATION.DATE <= '2020-03-24', 'PRE', 'POST')
 
 bangalore <- stats %>%
   filter(COUNTY == 'Bangalore') %>%
@@ -334,85 +352,49 @@ ggplot(data = bangalore,
 
 ```
 
-# Difference-in-Difference (PRELIMINARY)
+# Difference-in-Difference
 
 In this specification, we aim to estimate the difference in species richness per trip before and after lockdown, compared to same difference in 2019. In other words, we subtract the change in the pre-post period of 2019 (the counterfactual) from the 2020 lockdown effect to remove other determinants of species richness that are changing during the window. 
 
-To do this, we first select 2020 users with activity in at least 2 days before and after lockdown. Then we add all users from 2019 for the same days. These are different users but share similar characteristics.
+To do this, we first select 2020 users with at least 2 trips before and after lockdown. Then we 2019 with the same criteria, using March 24, 2019 as the threshold date. These are different users but share similar characteristics.
 
 Formally, we specify the following standard DID regression:
 
 $$ SR_{ijdt} = \beta_{1} [Treatment_{t} \times Post_{t}] + \beta_{2} [Treatment_{t}] + \beta_{3}[Post_{t}] + X_{ijdt} + \mu_{d} + \gamma_{t} + \epsilon_{ijdt} $$
 
-Where $Treatment$ is a dummy for the year 2020 and $Post$ is a dummy equal to one for observations after lockdown. $\beta_{1}$ is the coefficient of interest and describes the change in species richness before and after March 19 in 2020 compared to the same difference in 2019. $\beta_{2}$ describes the difference in the "before" groups (pre-intervention). $\beta_{3}$ captures the time trend in the control (2019) group. $X_{ijdt}$ is a vector of controls including trip duration. $\mu_{d}$ is a set of city fixed effects and $\gamma_{t}$ is a set of temporal controls including date and hour fixed effects. 
+Where $Treatment_{t}$ is a dummy for the year 2020 and $Post_{t}$ is a dummy equal to one for observations after March 24th. $\beta_{1}$ is the coefficient of interest and describes the change in species richness before and after March 19 in 2020 compared to the same difference in 2019. $\beta_{2}$ describes the difference in the "before" groups (pre-intervention). $\beta_{3}$ captures the time trend in the control (2019) group. $X_{ijdt}$ is a vector of controls including trip duration and rainfall. $\mu_{d}$ is a set of city fixed effects and $\gamma_{t}$ is a set of temporal controls including date and hour fixed effects. 
 
 ```{r,echo=FALSE,warning=FALSE,message=FALSE,fig.height=6,fig.width=8}
 require(modelsummary)
 models <- list()
 
-#-----------MARCH 24 Lockdown ------------
+sample <- did(ebird_full)
+models[['All Cities, 2 trips']] <- lm(s_richness ~ 
+                                    TreatPost + Treatment + Post + 
+                                    DURATION.MINUTES + rain + COUNTY + PROTOCOL.TYPE +
+                                    OBSERVATION.DATE + HOUR, data=sample)
 
-# 2019 sample
-ebird_19 <- ebird_full[ebird_full$YEAR == 2019 &
-                         ebird_full$OBSERVATION.DATE <= '2019-04-17',]
-ebird_19 <- select_sample(ebird_19, num_cities=20, lockdown = '2019-03-24')
-ebird_19 <- ebird_19 %>%
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER,
-                  YEAR, DURATION.MINUTES, s_richness, COUNTY, STATE, 
-                  HOUR, n_trips_pld) %>%
-    mutate(prepost = if_else(OBSERVATION.DATE < '2019-03-24', 'PRE', 'POST'))
+sample <- did(ebird_full, num_cities=20)
+models[['Top 20, 2 trips']] <- lm(s_richness ~ 
+                                    TreatPost + Treatment + Post + 
+                                    DURATION.MINUTES + rain + COUNTY + PROTOCOL.TYPE +
+                                    OBSERVATION.DATE + HOUR, data=sample)
 
-# 2020 sample
-ebird_20 <- select_sample(ebird, num_cities=20)
-ebird_20 <- ebird_20 %>%
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                  YEAR, DURATION.MINUTES, s_richness, COUNTY, STATE, 
-                  HOUR, n_trips_pld) %>%
-    mutate(prepost = if_else(OBSERVATION.DATE < '2020-03-24', 'PRE', 'POST'))
+sample <- did(ebird_full, before=5, after=5, num_cities=20)
+models[['Top 20, 5 trips']] <- lm(s_richness ~ 
+                                    TreatPost + Treatment + Post + 
+                                    DURATION.MINUTES + rain + COUNTY + PROTOCOL.TYPE +
+                                    OBSERVATION.DATE + HOUR, data=sample)
 
-data <- rbind(ebird_19, ebird_20)
-data$Treatment <- as.numeric(data$YEAR == 2020)
-data$Post <- as.numeric(data$prepost == 'POST')
-data$TreatPost <- data$Treatment*data$Post
+sample <- did(ebird_full, before=10, after=10, num_cities=20)
+models[['Top 20, 10 trips']] <- lm(s_richness ~ 
+                                    TreatPost + Treatment + Post + 
+                                    DURATION.MINUTES + rain + COUNTY + PROTOCOL.TYPE +
+                                    OBSERVATION.DATE + HOUR, data=sample)
 
-models[['Mar 24 Lockdown']] <- lm(s_richness ~ 
-                                    TreatPost + Treatment + Post + DURATION.MINUTES +
-                                    COUNTY + OBSERVATION.DATE + HOUR, data=data)
 
-## ---------- MARCH 22 Lockdown -------------
-ebird_19 <- ebird_full[ebird_full$YEAR == 2019 &
-                         ebird_full$OBSERVATION.DATE <= '2019-04-17',]
-ebird_19 <- select_sample(ebird_19, num_cities=20, lockdown = '2019-03-22')
-ebird_19 <- ebird_19 %>%
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER,
-                  YEAR, DURATION.MINUTES, s_richness, COUNTY, STATE, 
-                  HOUR, n_trips_pld) %>%
-    mutate(prepost = if_else(OBSERVATION.DATE < '2019-03-22', 'PRE', 'POST'))
-
-ebird_20 <- select_sample(ebird, num_cities=20, lockdown = '2020-03-22')
-ebird_20 <- ebird_20 %>%
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                  YEAR, DURATION.MINUTES, s_richness, COUNTY, STATE, 
-                  HOUR, n_trips_pld) %>%
-    mutate(prepost = if_else(OBSERVATION.DATE < '2020-03-22', 'PRE', 'POST'))
-
-data <- rbind(ebird_19, ebird_20)
-data$Treatment <- as.numeric(data$YEAR == 2020)
-data$Post <- as.numeric(data$prepost == 'POST')
-data$TreatPost <- data$Treatment*data$Post
-
-models[['Mar 22 Lockdown']] <- lm(s_richness ~ 
-                                    TreatPost + Treatment + Post + DURATION.MINUTES +
-                                    COUNTY + OBSERVATION.DATE + HOUR, data=data)
-
-cm <- c('TreatPost'= 'Treat x Post',
-        'DURATION.MINUTES'='Duration',
-        'Post' = 'Post',
-        'Treatment'='Treatment')
-msummary(models, coef_map=cm, stars=T,
-         title = "Diff-in-Diff Estimates (Top 20 cities)")
+cmap <- c('TreatPost'= 'Treat x Post', 'DURATION.MINUTES'='Duration', 
+          'Post' = 'Post', 'Treatment'='Treatment')
+msummary(models, coef_map = cmap, stars = T,
+         title = "Diff-in-Diff Estimates")
 ```
