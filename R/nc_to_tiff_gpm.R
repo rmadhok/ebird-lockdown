@@ -13,7 +13,7 @@ SHP <- '/Users/rmadhok/Dropbox (Personal)/IndiaPowerPlant/data/'
 require(raster)
 require(rgdal) 
 require(sp)
-require(tidyverse) 
+require(tidyverse)
 
 # --------------------------------------------------------------
 # Load Data
@@ -36,18 +36,14 @@ for(file in files){
   date <- getZ(r)
   
   print(paste('Processing: ', date, sep=''))
-
-  # Sync CRS
-  extent(r) <- extent(india_dist) # sync extents
-  proj4string(r) <- proj4string(india_dist) # sync projection
   
-  # Crop
-  r <- crop(r, extent(india_dist))
-
+  # Transpose (raw raster is rotated)
+  r <- t(r)
+  
   # save as geotiff
   names(r) <- 'rain'
   writeRaster(r, 
-              paste('./gpm_tiff/GPM-', date, sep=''),
+              paste('./gpm_tif/GPM-', date, sep=''),
               format='GTiff',
               overwrite=T)
 }

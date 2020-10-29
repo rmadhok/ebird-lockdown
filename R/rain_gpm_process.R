@@ -9,7 +9,7 @@ rm(list=ls())
 #READ.DIR <- '/home/rmadhok/projects/def-sgulati/rmadhok/ebird_lockdown/data/gpm_tiff/'
 #SAVE.DIR <- '/home/rmadhok/projects/def-sgulati/rmadhok/ebird_lockdown/data/'
 #SHP <- '/home/rmadhok/projects/def-sgulati/rmadhok/IndiaPowerPlant/data/shapefiles/district2011/'
-READ.DIR <- '/Volumes/Backup Plus/research/ebird_lockdown/weather/gpm_tiff/'
+READ.DIR <- '/Volumes/Backup Plus/research/ebird_lockdown/weather/gpm_tif/'
 SAVE.DIR <- '/Users/rmadhok/Dropbox (Personal)/ebird_lockdown/data/'
 SHP <- '/Users/rmadhok/Dropbox (Personal)/IndiaPowerPlant/data/maps/india-district/'
 
@@ -40,7 +40,11 @@ for(tif in tifs){
   
   # Read
   r <- raster(tif)
-
+  
+  # Project
+  proj4string(r) <- proj4string(india_dist)
+  r <- crop(r, extent(india_dist))
+  
   # Extract mean
   df <- raster::extract(r, india_dist,
                         fun = mean, na.rm = T, sp=T)@data
@@ -49,7 +53,7 @@ for(tif in tifs){
   df <- df %>% 
     mutate(date = date) %>%
     rename(rain = starts_with('GPM')) %>%
-    dplyr::select('STATE_UT', 'NAME', 'c_code_11', 'date', 'rain')
+    dplyr::select('c_code_11', 'date', 'rain')
   
   # append
   master <- rbind(master, df)
@@ -58,5 +62,5 @@ for(tif in tifs){
 
 # Save
 write.csv(master, 
-          paste(SAVE.DIR, 'india_rain_gpm.csv', sep=""),
-          row.names = F)
+          paste(SAVE.DIR, 'india_rain_gpm2.csv', sep=""),
+          row.names = F) 
