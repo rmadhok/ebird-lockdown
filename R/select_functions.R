@@ -13,10 +13,9 @@ select_cities <- function(df, num) {
   ## df_cities: subset of df restricted to observations in the top 'num' cities
   
   city_list <- df %>%
-    group_by(COUNTY) %>%
-    #arrange(desc(POP_DENSITY)) %>%
-    summarize(state = first(STATE),
-              pop_density = first(POP_DENSITY)) %>%
+    group_by(county) %>%
+    summarize(state = first(state),
+              pop_density = first(pop_density)) %>%
     arrange(desc(pop_density)) %>%
     head(num)
   df_cities <- merge(df, city_list, by = 'COUNTY')
@@ -37,14 +36,14 @@ select_users <- function(df, before, after, lockdown) {
   ## df_select: subset of df restricted to users meeting selection criteria.
   
   user_list <- df %>%
-    mutate(prepost = if_else(OBSERVATION.DATE <= lockdown, 'PRE', 'POST')) %>%
-    group_by(OBSERVER.ID, prepost) %>%
-    summarize(n_trips = n_distinct(SAMPLING.EVENT.IDENTIFIER)) %>%
+    mutate(prepost = if_else(date <= lockdown, 'pre', 'post')) %>%
+    group_by(observer_id, prepost) %>%
+    summarize(n_trips = n_distinct(trip_id)) %>%
     spread(prepost, n_trips) %>%
-    filter(PRE >= before & POST >= after) %>%
-    dplyr::select(OBSERVER.ID)
+    filter(pre >= before & post >= after) %>%
+    dplyr::select(observer_id)
   
-  df_select <- merge(df, user_list, by = 'OBSERVER.ID')
+  df_select <- merge(df, user_list, by = 'observer_id')
   
   return(df_select)
   
@@ -64,7 +63,7 @@ select_sample <- function(df,
   ### after: numeric; observer logged 'after' trips after lockdown
   ### num_cities: numeric; select observations in top 'num_cities' cities by pop. density
   ### home: TRUE/FALSE; select observations from home
-  ## lockdown: date of lockdown
+  ### lockdown: date of lockdown
   
   ## Outputs:
   ## sample: dataframe restricted to meeting all selection criteria.

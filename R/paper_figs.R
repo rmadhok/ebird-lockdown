@@ -15,8 +15,8 @@ require(estimatr)
 require(cowplot)
 require(fastDummies)
 require(data.table)
-source('/Users/rmadhok/Dropbox (Personal)/ebird_lockdown/scripts/R/select_functions.R')
-setwd('/Users/rmadhok/Dropbox (Personal)/ebird_lockdown/')
+source('/Users/rmadhok/Dropbox/ebird_lockdown/scripts/R/select_functions.R')
+setwd('/Users/rmadhok/Dropbox/ebird_lockdown/')
 
 # Read full 2019/2020 data
 ebird_full <- readRDS('./data/ebd_full.rds')
@@ -82,7 +82,6 @@ ggplot(stats,
   facet_wrap(~COUNTY+key, scales='free', ncol=3)
 ggsave('./figs/4citytrend.png', height=10,width=8)
 
-
 #-----------------------------------------------
 # TABLE 0 : TOP 20 Cities
 #-----------------------------------------------
@@ -108,7 +107,7 @@ stats <- ebird20.d %>%
             `Num. Users` = n_distinct(OBSERVER.ID),
             `Num. Species` = n_distinct(TAXONOMIC.ORDER)) %>%
   arrange(desc(PREPOST)) %>%
-  pivot_longer(starts_with('N'), names_to = ' ') %>%
+  pivot_longer(starts_with('N'), names_to = 'Num') %>%
   pivot_wider(names_from = PREPOST, values_from = value)
 panel1 <- stargazer(stats, summary=F, rownames=F)
 
@@ -124,7 +123,7 @@ stats <- ebird20.d %>%
             `Num. Users` = n_distinct(OBSERVER.ID),
             `Num. Species` = n_distinct(TAXONOMIC.ORDER)) %>%
   arrange(desc(PREPOST)) %>%
-  pivot_longer(starts_with('N'), names_to = ' ') %>%
+  pivot_longer(starts_with('N'), names_to = 'Num') %>%
   pivot_wider(names_from = PREPOST, values_from = value)
 panel2 <- stargazer(stats, summary=F, rownames=F)
 star_panel(panel1, panel2, 
@@ -141,7 +140,8 @@ stats <- ebird20.d %>%
   select_sample() %>%
   distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
   dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                DURATION.MINUTES, s_richness, COUNTY, hotspot_km) %>%
+                DURATION.MINUTES, s_richness, COUNTY, 
+                temperature, rain, hotspot_km) %>%
   mutate(PREPOST = if_else(
     OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
   ) %>%
@@ -149,7 +149,9 @@ stats <- ebird20.d %>%
   summarize(`Mean Trip Length` = round(mean(DURATION.MINUTES, na.rm=T), 2),
             `Mean Species Richness` = round(mean(s_richness, na.rm=T), 2),
             `Median Species Richness` = median(s_richness, na.rm=T),
-            `Mean Dist. to Hotspot (km)` = round(mean(hotspot_km, na.rm = T), 2)) %>%
+            `Mean Dist. to Hotspot (km)` = round(mean(hotspot_km, na.rm = T), 2),
+            `Mean Rainfall (mm)` = round(mean(rain, na.rm=T), 2),
+            `Mean Temperature (Celsius)` = round(mean(temperature, na.rm=T), 2)) %>%
   arrange(desc(PREPOST)) %>%
   pivot_longer(starts_with('M'), names_to = ' ') %>%
   pivot_wider(names_from = PREPOST, values_from = value)
@@ -160,7 +162,8 @@ stats <- ebird20.d %>%
   select_sample(num_cities = 20) %>%
   distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
   dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                DURATION.MINUTES, s_richness, COUNTY, hotspot_km) %>%
+                DURATION.MINUTES, s_richness, COUNTY, 
+                temperature, rain, hotspot_km) %>%
   mutate(PREPOST = if_else(
     OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
   ) %>%
@@ -168,7 +171,9 @@ stats <- ebird20.d %>%
   summarize(`Mean Trip Length` = round(mean(DURATION.MINUTES, na.rm=T),2),
             `Mean Species Richness` = round(mean(s_richness, na.rm=T),2),
             `Median Species Richness` = median(s_richness, na.rm=T),
-            `Mean Dist. to Hotspot (km)` = round(mean(hotspot_km, na.rm = T), 2)) %>%
+            `Mean Dist. to Hotspot (km)` = round(mean(hotspot_km, na.rm = T), 2),
+            `Mean Rainfall (mm)` = round(mean(rain, na.rm=T), 2),
+            `Mean Temperature (Celsius)` = round(mean(temperature, na.rm=T), 2)) %>%
   arrange(desc(PREPOST)) %>%
   pivot_longer(starts_with('M'), names_to = ' ') %>%
   pivot_wider(names_from = PREPOST, values_from = value)
@@ -218,6 +223,8 @@ ggplot(stats, aes(x=label,
        fill='') +
   theme_bw() +
   theme(panel.grid.minor = element_blank(), 
+        axis.title.y = element_text(size=17),
+        legend.text=element_text(size=17),
         axis.line = element_blank(), 
         axis.title.x = element_blank(),
         axis.ticks = element_blank(),
@@ -249,92 +256,8 @@ ggplot(data = stats,
         axis.ticks = element_blank())
 ggsave('./figs/hour_distbn.png', height=6,width=8)
 
-#---------------------------------------------------
-# FIGURE 4: EVENT STUDY
-#--------------------------------------------------
-# 2020
-stats <- data.frame()
-
-coefs <- event_study(ebird20.d, num_cities = 20, user_fe=T)
-coefs$type <- '2020'
-stats <- rbind(stats, coefs)
-
-# 2019
-ebird19 <- ebird_full[ebird_full$YEAR == 2019 & 
-                        ebird_full$OBSERVATION.DATE <= '2019-04-20' &
-                        ebird_full$OBSERVATION.DATE >= '2019-03-03',]
-coefs <- event_study(ebird19, num_cities = 20, lockdown = '2019-03-27', user_fe=T)
-coefs$type <- '2019'
-stats <- rbind(stats, coefs)
-
-# Main Plot
-ggplot(stats, aes(x=time, y=estimate, group=1)) + 
-  geom_line() + 
-  geom_point(aes(color='Coefficient')) +
-  geom_ribbon(aes(ymin=conf.low, ymax=conf.high, fill='95% CI'), alpha=.5) +
-  geom_vline(xintercept=0, linetype='dashed') +
-  geom_hline(yintercept=0, linetype='dashed') +
-  ylab('Species Richness Relative to Lockdown\n') +
-  xlab('\n Days to Lockdown') +
-  scale_x_continuous(breaks = seq(-20, 30, by = 5)) +
-  scale_colour_manual("" , values = "black") +
-  scale_fill_manual("", values = "grey12") +
-  theme_bw() +
-  theme(panel.grid.minor = element_blank(),
-        text = element_text(size=17),
-        axis.line = element_blank(), 
-        axis.ticks = element_blank(),
-        strip.text = element_text(size=15)) +
-  facet_wrap(~type, scales='free', ncol=1)
-ggsave('./figs/es_main.png', height=6,width=8)
-
-# ROBUSTNESS
-stats <- data.frame()
-
-# Top 20, 5 trips before/after
-coefs <- event_study(ebird20.d, num_cities = 20, before = 5, after = 5, user_fe=T)
-coefs$type <- factor('Cities: 20\nConstraint: 5 trips\nLD: Mar 25')
-stats <- rbind(stats, coefs)
-
-# Top 20, 10 trips before/after
-coefs <- event_study(ebird20.d, num_cities = 20, before = 10, after = 10, user_fe=T)
-coefs$type <- factor('Cities: 20\nConstraint: 10 trips\nLD: Mar 25')
-stats <- rbind(stats, coefs)
-
-# All Cities, 2 trips before/after
-coefs <- event_study(ebird20.d, user_fe=T)
-coefs$type <- factor('Cities: All\nConstraint: 2 trips\nLD: Mar 25')
-stats <- rbind(stats, coefs)
-
-# Top 20, 2 trips before/after, Janta Curfew
-ebird_janta <- filter(ebird20, OBSERVATION.DATE <= '2020-04-13')
-coefs <- event_study(ebird_janta, num_cities = 20, lockdown='2020-03-22', user_fe=T)
-coefs$type <- factor('Cities: 20\nConstraint: 2 trips\nLD: Mar 22')
-stats <- rbind(stats, coefs)
-rm(list='ebird_janta')
-
-ggplot(stats, aes(x=time, y=estimate, group=1)) + 
-  geom_line() + 
-  geom_point(aes(color='Coefficient')) +
-  geom_ribbon(aes(ymin=conf.low, ymax=conf.high, fill='95% CI'), alpha=.5) +
-  geom_vline(xintercept=0, linetype='dashed') +
-  geom_hline(yintercept=0, linetype='dashed') +
-  geom_text(aes(x=-2, label="Lockdown", y=2), angle=90) +
-  ylab('Species Richness Relative to Lockdown\n') +
-  xlab('\n Days to Lockdown') +
-  scale_x_continuous(breaks = seq(-20, 30, by = 5)) +
-  scale_colour_manual("" , values = "black") +
-  scale_fill_manual("", values = "grey12") +
-  theme_bw() +
-  theme(panel.grid.minor = element_blank(),
-        text = element_text(size=13),
-        axis.line = element_blank(), 
-        axis.ticks = element_blank()) +
-  facet_wrap(~type, scales='free', ncol=2)
-ggsave('./figs/es_rb.png', height=6,width=10)
-
 #-----------------------------------------------
-# FIG 6 : DIFF IN DIFF GRAPH
+# FIG 5 : DIFF IN DIFF GRAPH
 #-----------------------------------------------
 sample <- did(ebird_full, drop=F)
 dd_type <- sample %>%
@@ -353,12 +276,12 @@ dd_type <- sample %>%
 ggplot(dd_type[dd_type$var == 'Num. Species/Trip',], aes(x=(dif), y=value, group=key)) +
   geom_line(aes(color=key), size=1.5) + 
   labs(y='',
-       x='\nDays since 4th Wednesday in March', color = 'Trip Protocol') +
+       x='Days since 4th Wednesday in March', color = 'Trip Protocol') +
   geom_vline(xintercept=0, linetype='dashed') +
   geom_hline(yintercept=0, linetype='dashed') +
   scale_colour_viridis_d() +
   scale_x_continuous(breaks = c(-21, -14, -7, 0, 7, 14, 21),
-                     labels= c('-21', '-14', '-7', '0\n[4th Wed.]','7', '14', '21')) +
+                     labels= c('-21', '-14', '-7', '0','7', '14', '21')) +
   theme_bw() +
   theme(panel.grid.minor = element_blank(), 
         axis.line = element_blank(),
@@ -390,24 +313,20 @@ ggsave('./figs/dd_activity_plot.png', height=6,width=15)
 # ----- Export for stata ------------------------------------
 
 # Top 20, 2 trips
-sample <- did(ebird_full, num_cities=20)
-write.csv(sample, './data/dd_t20_2trips.csv', row.names = F)
-
-# Top 20, 2 trips, home
-sample <- did(ebird_full, num_cities=20, home = T)
-write.csv(sample, './data/dd_t20_2trips_home.csv', row.names = F)
+#sample <- did(ebird_full, num_cities=20)
+#write.csv(sample, './data/dd_t20_2trips.csv', row.names = F)
 
 # Top 20, 5 trips
-sample <- did(ebird_full, before=5, after=5, num_cities=20)
-write.csv(sample, './data/dd_t20_5trips.csv', row.names = F)
+#sample <- did(ebird_full, before=5, after=5, num_cities=20)
+#write.csv(sample, './data/dd_t20_5trips.csv', row.names = F)
 
 # Top 20, 10 trips
-sample <- did(ebird_full, before=10, after=10, num_cities=20)
-write.csv(sample, './data/dd_t20_10trips.csv', row.names = F)
+#sample <- did(ebird_full, before=10, after=10, num_cities=20)
+#write.csv(sample, './data/dd_t20_10trips.csv', row.names = F)
 
 # All cities, 2 trips
-sample <- did(ebird_full)
-write.csv(sample, './data/dd_all_2trips.csv', row.names = F)
+#sample <- did(ebird_full)
+#write.csv(sample, './data/dd_all_2trips.csv', row.names = F)
 #--------------------------------------------------------------------
 
 # SPECIFICATION CURVE - MAIN RESULTS
@@ -486,12 +405,13 @@ coef_plot <- ggplot(estimates, aes(x = spec_no, y = est)) +
   theme(axis.title.x = element_blank(), 
         axis.ticks.x = element_blank(), 
         axis.line.x = element_blank(), 
-        axis.text.x = element_blank())
+        axis.text.x = element_blank(),
+        plot.margin = unit(c(3,3,3,3), "lines"))
 coef_plot
 
 # Make spec plots
 spec_plots <- lapply(spec_cols, make_spec_plot)
-combined_plot <- plot_grid(plotlist = c(list(coef_plot), spec_plots), 
+combined_plot_main <- plot_grid(plotlist = c(list(coef_plot), spec_plots), 
                            labels = c("", spec_cols), 
                            label_size = 8, 
                            label_fontface = "italic", 
@@ -499,7 +419,7 @@ combined_plot <- plot_grid(plotlist = c(list(coef_plot), spec_plots),
                            rel_heights = c(4, 1.1, 1.3, 1.1, 1.1, 1.1), 
                            ncol = 1,
                            align = "v")
-save_plot("./figs/spec_curve_main.png", combined_plot)
+save_plot("./figs/spec_curve_main.png", combined_plot_main)
 
 
 # ROBUSTNESS ---------------------------------------------------
@@ -570,12 +490,13 @@ coef_plot <- ggplot(estimates, aes(x = spec_no, y = est)) +
         axis.ticks.x = element_blank(), 
         axis.line.x = element_blank(), 
         axis.text.x = element_blank(),
-        axis.title.y = element_text(size=11))
+        axis.title.y = element_text(size=11),
+        plot.margin = unit(c(3,3,3,3), "lines"))
 coef_plot
 
 # Make spec plots
 spec_plots <- lapply(spec_cols, make_spec_plot)
-combined_plot <- plot_grid(plotlist = c(list(coef_plot), spec_plots), 
+combined_plot_rb <- plot_grid(plotlist = c(list(coef_plot), spec_plots), 
                            labels = c("", spec_cols), 
                            label_size = 8, 
                            label_fontface = "italic", 
@@ -583,8 +504,7 @@ combined_plot <- plot_grid(plotlist = c(list(coef_plot), spec_plots),
                            rel_heights = c(6, 1.5, 1.5, 1.5, 1.5), 
                            ncol = 1,
                            align = "v")
-save_plot("./figs/spec_curve_rb.png", combined_plot)
-
+save_plot("./figs/spec_curve_rb.png", combined_plot_rb)
 
 # Dynamic DD ----------------------------------------------------------
 
@@ -602,9 +522,31 @@ dd_time <- rbind(dd_time, tidy(lm_robust(s_richness ~ Treatment:bin + Treatment 
                se_type = 'stata')) %>%
   filter(str_detect(term, '^Treatment:')) %>%
   mutate(term = str_replace(term, 'Treatment:bin', ''),
-         term = factor(term, as.character(term)),
-         type = 'A. Constraint: 2 Trips'))
+         term = factor(term, as.character(term))))
 
+# Plot
+dd_plot_2 <- ggplot(dd_time, aes(x=term, y=estimate, group=1)) + 
+  geom_line() + 
+  geom_point(aes(color='Coefficient')) +
+  geom_errorbar(aes(ymin=conf.low, ymax=conf.high, width=0.3)) +
+  geom_hline(yintercept=0, linetype='dashed') +
+  ylab('Species Richness Relative to Lockdown\n') +
+  xlab('\n Days to Lockdown') +
+  scale_colour_manual('' , values = 'black') +
+  scale_fill_manual('', values = 'grey12') +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour='black'), 
+        axis.ticks = element_blank(),
+        axis.text.x = element_text(angle=90),
+        text=element_text(size=17))
+ggsave('./figs/dynamic_dd_2trip.png', height=6,width=10)
+
+# Top 20, 5 trips
+dd_time <- data.frame()
 sample <- did(ebird_full, num_cities=20, before=5, after=5) %>%
   mutate(bin = relevel(cut(as.numeric(dif), 8), 4))
 
@@ -616,24 +558,27 @@ dd_time <- rbind(dd_time, tidy(lm_robust(s_richness ~ Treatment:bin + Treatment 
                                          se_type = 'stata')) %>%
                    filter(str_detect(term, '^Treatment:')) %>%
                    mutate(term = str_replace(term, 'Treatment:bin', ''),
-                          term = factor(term, as.character(term)),
-                          type = 'B. Constraint: 5 Trips'))
+                          term = factor(term, as.character(term))))
 
-ggplot(dd_time, aes(x=term, y=estimate, group=1)) + 
+# Plot
+dd_plot_5 <- ggplot(dd_time, aes(x=term, y=estimate, group=1)) + 
   geom_line() + 
   geom_point(aes(color='Coefficient')) +
   geom_errorbar(aes(ymin=conf.low, ymax=conf.high, width=0.3)) +
   geom_hline(yintercept=0, linetype='dashed') +
   ylab('Species Richness Relative to Lockdown\n') +
   xlab('\n Days to Lockdown') +
-  scale_colour_manual("" , values = "black") +
-  scale_fill_manual("", values = "grey12") +
+  scale_colour_manual('' , values = 'black') +
+  scale_fill_manual('', values = 'grey12') +
   theme_bw() +
   theme(panel.grid.minor = element_blank(),
-        text = element_text(size=15),
         axis.line = element_blank(), 
         axis.ticks = element_blank(),
         axis.text.x = element_text(angle=90),
-        strip.text = element_text(size=15)) +
-  facet_wrap(~type, scales='free', ncol=2)
-ggsave('./figs/dynamic_dd.png', height=6,width=10)
+        text=element_text(size=17))
+ggsave('./figs/dynamic_dd_5trip.png', height=6,width=10)
+
+# COMBINE MAIN AND DYNAMIC RESULTS
+require(ggpubr)
+ggarrange(combined_plot_main, dd_plot_2, ncol=1)
+ggsave('./figs/dd_combined.png', height=6,width=10)
