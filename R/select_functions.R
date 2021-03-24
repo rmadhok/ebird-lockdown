@@ -2,6 +2,9 @@
 # PURPOSE: Sample Selection Functions
 # AUTHOR: Raahil Madhok
 
+#-----------------------------------
+# Select Top Cities
+#-----------------------------------
 select_cities <- function(df, num) {
   
   # Function: select_cities
@@ -24,6 +27,9 @@ select_cities <- function(df, num) {
   
 }
 
+#-----------------------------------
+# Impose Participation Constraint
+#-----------------------------------
 select_users <- function(df, before, after, lockdown) {
   
   # Function: select_users
@@ -49,11 +55,13 @@ select_users <- function(df, before, after, lockdown) {
   
 }
 
+#-----------------------------------
+# Select Analysis Sample
+#-----------------------------------
 select_sample <- function(df, 
                           before = 2, 
                           after = 2, 
                           num_cities = NULL, 
-                          home = FALSE,
                           lockdown = '2020-03-24') {
   
   # Function: select_sample
@@ -68,18 +76,17 @@ select_sample <- function(df,
   ## Outputs:
   ## sample: dataframe restricted to meeting all selection criteria.
   
-  
-  # If cities and home not inputted 
-  if(is.null(num_cities) & isFALSE(home)) {
+  # If cities not inputted 
+  if(is.null(num_cities)) {
      
-     # Select users from all cities, all places, meeting participation constraint
+     # Select users from all cities meeting participation constraint
      sample <- select_users(df, before, after, lockdown)
      
      return(sample)
      }
   
-  # Only Home not inputted
-  if(isFALSE(home) & !is.null(num_cities)) {
+  # All arguments inputted
+  if(!is.null(num_cities)) {
   
     # Select top cities
     sample <- select_cities(df, num_cities)
@@ -89,142 +96,101 @@ select_sample <- function(df,
     
     return(sample)
     }
-  
-  # Only cities not inputted
-  if(isTRUE(home) & is.null(num_cities)) {
-    
-    # Select users at home in all cities
-    sample <- filter(df, LOCALITY.TYPE == 'P')
-    
-    # Select users from all cities meeting participation constraint
-    sample <- select_users(sample, before, after, lockdown)
-    
-    return(sample)
-    }
-  
-  # All arguments given
-  if(isTRUE(home) & !is.null(num_cities)) {
-    
-    # Select top X cities
-    sample <- select_cities(df, num_cities)
-    
-    # Select users at home in top X cities
-    sample <- filter(sample, LOCALITY.TYPE == 'P')
-    
-    # Select users at home in top X cities meeting participation constraint
-    sample <- select_users(sample, before, after, lockdown)
-    
-    return(sample)
-    
-  }
 }
 
-event_study <- function(df, 
-                        before = 2, 
-                        after = 2, 
-                        num_cities = NULL, 
-                        home = FALSE,
-                        lockdown = '2020-03-25',
-                        user_fe = F) {
-  
-  # Select Sample
-  sample <- select_sample(df, before, after, num_cities, home, lockdown)
-  
-  # Trip level
-  sample <- sample %>%  
-    distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                  DURATION.MINUTES, s_richness, COUNTY, STATE, PROTOCOL.TYPE,
-                  HOUR, n_trips_pld, rain, temperature, weekend, 
-                  NUMBER.OBSERVERS, hotspot_km) %>%
-    mutate(dif = OBSERVATION.DATE - (as.Date(lockdown)-1)) %>%
-    mutate(dif = str_replace(as.character(dif), '-','m'))
-  
-  # Estimate
-  if(isFALSE(user_fe)) {
-    
-  est <- lm(s_richness ~ dif + DURATION.MINUTES + n_trips_pld + rain + temperature +
-              COUNTY + as.factor(HOUR) + PROTOCOL.TYPE + weekend + hotspot_km + NUMBER.OBSERVERS, 
-            data = sample)
-
-  # tidy
-  est_df <- broom::tidy(est, conf.int = T) %>% 
-    filter(str_detect(term, "^dif")) %>%
-    mutate(time = str_replace(term, 'dif', ''),
-           time = as.numeric(str_replace(time, 'm', '-')))
-  
-  return(est_df)
-  
-  }
-  
-  if(isTRUE(user_fe)) {
-    est <- lm(s_richness ~ dif + DURATION.MINUTES + rain + temperature +
-                OBSERVER.ID + as.factor(HOUR) + PROTOCOL.TYPE + weekend + hotspot_km + NUMBER.OBSERVERS, 
-              data = sample)
-
-    # tidy
-    est_df <- broom::tidy(est, conf.int = T) %>% 
-      filter(str_detect(term, "^dif")) %>%
-      mutate(time = str_replace(term, 'dif', ''),
-             time = as.numeric(str_replace(time, 'm', '-')))
-    
-    return(est_df)
-  }
- 
-}
-
+#-----------------------------------
+# Diff in Diff Sample
+#-----------------------------------
 did <- function(df,
                 before = 2,
                 after = 2,
                 num_cities = NULL,
-                home = F,
                 drop = T){
   
   # 2019 Slice
-  df_19 <- df[df$YEAR == 2019 & 
-                df$OBSERVATION.DATE <= '2019-04-20' &
-                ebird_full$OBSERVATION.DATE >= '2019-03-03',]
-  df_19 <- select_sample(df_19, before, after, num_cities, home, lockdown='2019-03-26')
+  df_19 <- filter(df, year == 2019 & date <= '2019-04-20' & date >= '2019-03-03') 
+  df_19 <- select_sample(df_19, before, after, num_cities, lockdown='2019-03-26')
   df_19 <- df_19 %>%
-    distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER,
-                  YEAR, DURATION.MINUTES, s_richness, COUNTY, STATE, PROTOCOL.TYPE, 
-                  HOUR, n_trips_pld, rain, temperature, weekend, 
-                  NUMBER.OBSERVERS, hotspot_km, LOCALITY, LOCALITY.TYPE, day_week) %>%
-    mutate(prepost = if_else(OBSERVATION.DATE <= '2019-03-26', 'PRE', 'POST'),
-           dif = OBSERVATION.DATE - as.Date('2019-03-27'))
+    distinct(trip_id, .keep_all = T) %>%
+    dplyr::select(observer_id, date, trip_id, year, duration, s_richness, 
+                  county, state, protocol, hour, rain, temperature, weekend, 
+                  number_observers, hotspot_km, locality, locality_type) %>%
+    mutate(prepost = if_else(date <= '2019-03-26', 'pre', 'post'),
+           dif = date - as.Date('2019-03-27'))
   
   # 2020 slice
-  df_20 <- df[df$YEAR == 2020 & df$OBSERVATION.DATE <= '2020-04-17',]
+  df_20 <- filter(df, year == 2020 & date <= '2020-04-17')
   
   if(isTRUE(drop)) {
-    
-    df_20 <- df_20[df_20$OBSERVATION.DATE != '2020-03-22',]
+    df_20 <- filter(df_20, date != '2020-03-22')
   }
   
-  df_20 <- select_sample(df_20, before, after, num_cities, home, lockdown='2020-03-24')
+  df_20 <- select_sample(df_20, before, after, num_cities, lockdown='2020-03-24')
   df_20 <- df_20 %>%
-    distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-    dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                  YEAR, DURATION.MINUTES, s_richness, COUNTY, STATE, PROTOCOL.TYPE,
-                  HOUR, n_trips_pld, rain, temperature, weekend,
-                  NUMBER.OBSERVERS, hotspot_km, LOCALITY, LOCALITY.TYPE, day_week) %>%
-    mutate(prepost = if_else(OBSERVATION.DATE <= '2020-03-24', 'PRE', 'POST'),
-           dif = OBSERVATION.DATE - as.Date('2020-03-25'))
+    distinct(trip_id, .keep_all = T) %>%
+    dplyr::select(observer_id, date, trip_id, year, duration, s_richness, 
+                  county, state, protocol, hour, rain, temperature, weekend,
+                  number_observers, hotspot_km, locality, locality_type) %>%
+    mutate(prepost = if_else(date <= '2020-03-24', 'pre', 'post'),
+           dif = date - as.Date('2020-03-25'))
   
   # stack
   sample <- rbind(df_19, df_20)
   
   # Treatment
-  sample$Treatment <- as.numeric(sample$YEAR == 2020)
-  sample$Post <- as.numeric(sample$prepost == 'POST')
+  sample$Treatment <- as.numeric(sample$year == 2020)
+  sample$Post <- as.numeric(sample$prepost == 'post')
   sample$TreatPost <- sample$Treatment * sample$Post
   
   return(sample)
   
 }
 
-# Function to create a specification plot for a single category. 
+#-----------------------------------------------
+# Diff in Diff Sample - PLACEBO (FOR REFEREE 1)
+#----------------------------------------------
+did_placebo <- function(df,
+                        before = 2,
+                        after = 2,
+                        num_cities = NULL){
+  
+  # 2018 Slice
+  df_18 <- filter(df, year == 2018 & date <= '2018-04-20' & date >= '2018-03-04') 
+  df_18 <- select_sample(df_18, before, after, num_cities, lockdown='2018-03-27')
+  df_18 <- df_19 %>%
+    distinct(trip_id, .keep_all = T) %>%
+    dplyr::select(observer_id, date, trip_id, year, duration, s_richness, 
+                  county, state, protocol, hour, rain, temperature, weekend, 
+                  number_observers, hotspot_km, locality, locality_type) %>%
+    mutate(prepost = if_else(date <= '2018-03-27', 'pre', 'post'),
+           dif = date - as.Date('2018-03-28'))
+  
+  # 2019 Slice
+  df_19 <- filter(df, year == 2019 & date <= '2019-04-20' & date >= '2019-03-03') 
+  df_19 <- select_sample(df_19, before, after, num_cities, lockdown='2019-03-26')
+  df_19 <- df_19 %>%
+    distinct(trip_id, .keep_all = T) %>%
+    dplyr::select(observer_id, date, trip_id, year, duration, s_richness, 
+                  county, state, protocol, hour, rain, temperature, weekend, 
+                  number_observers, hotspot_km, locality, locality_type) %>%
+    mutate(prepost = if_else(date <= '2019-03-26', 'pre', 'post'),
+           dif = date - as.Date('2019-03-27'))
+  
+  # stack
+  sample <- rbind(df_18, df_19)
+  
+  # Treatment
+  sample$Treatment <- as.numeric(sample$year == 2019)
+  sample$Post <- as.numeric(sample$prepost == 'post')
+  sample$TreatPost <- sample$Treatment * sample$Post
+  
+  return(sample)
+  
+}
+
+#-----------------------------------
+# Specification Plot
+#-----------------------------------
 make_spec_plot <- function(category) {
   
   if(category == 'Participation Constraint'){
