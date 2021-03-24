@@ -1,8 +1,9 @@
+#----------------------------------------------------------------------------
 # PROJECT: Wildlife and Lockdon
 # PURPOSE: Paper Figures/tables
 # AUTHOR: Raahil Madhok
 # DATE: June 24 2020 [created]
-
+#----------------------------------------------------------------------------
 # Settings
 rm(list=ls())
 require(tidyverse)
@@ -17,29 +18,24 @@ require(fastDummies)
 require(data.table)
 source('/Users/rmadhok/Dropbox/ebird_lockdown/scripts/R/select_functions.R')
 setwd('/Users/rmadhok/Dropbox/ebird_lockdown/')
+#----------------------------------------------------------------------------
 
-# Read full 2019/2020 data
-ebird_full <- readRDS('./data/ebd_full.rds')
-
-# Extract 2020 before/after window
-ebird20 <- ebird_full[ebird_full$YEAR == 2020 & 
-                      ebird_full$OBSERVATION.DATE <= '2020-04-17',]
+# Read data (2018-2020)
+ebird_full <- readRDS('./data/ebd_full.rds') # Full 
+ebird20 <- filter(ebird_full, year == 2020 & date <= '2020-04-17') # 2020 data
 
 #-----------------------------------------------
 # FIG 1 : Daily Activity
 #-----------------------------------------------
 stats <- ebird20 %>%
-  group_by(OBSERVATION.DATE, PROTOCOL.TYPE) %>%
-  summarize(`A. Num. Active Users` = n_distinct(OBSERVER.ID),
-            `B. Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
-            `C. Num. Unique Species` = n_distinct(TAXONOMIC.ORDER)) %>%
+  group_by(date, protocol) %>%
+  summarize(`A. Num. Active Users` = n_distinct(observer_id),
+            `B. Num. Trips` = n_distinct(trip_id),
+            `C. Num. Unique Species` = n_distinct(taxonomic_order)) %>%
   gather(key, value, contains('Num.'))
 
-ggplot(stats, 
-       aes(x=OBSERVATION.DATE, 
-           y=value, 
-           group=PROTOCOL.TYPE)) +
-  geom_line(aes(color=PROTOCOL.TYPE), size=1) + 
+ggplot(stats, aes(x=date, y=value, group=protocol)) +
+  geom_line(aes(color=protocol), size=1) + 
   labs(y='') +
   geom_vline(xintercept=as.numeric(as.Date("2020-03-25")), linetype='dashed') +
   scale_x_date(date_breaks = '10 days', date_labels = '%b\n%d') +
@@ -57,18 +53,15 @@ ggsave('./figs/daytrend.png', height=3,width=8)
 # FIG 2 : Daily Activity by City
 #-----------------------------------------------
 stats <- ebird20 %>%
-  group_by(COUNTY, OBSERVATION.DATE, PROTOCOL.TYPE) %>%
-  summarize(`A. Num. Active Users` = n_distinct(OBSERVER.ID),
-            `B. Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
-            `C. Num. Unique Species` = n_distinct(TAXONOMIC.ORDER)) %>%
+  group_by(county, date, protocol) %>%
+  summarize(`A. Num. Active Users` = n_distinct(observer_id),
+            `B. Num. Trips` = n_distinct(trip_id),
+            `C. Num. Unique Species` = n_distinct(taxonomic_order)) %>%
   gather(key, value, contains('Num.')) %>%
-  filter(COUNTY %in% c('Mumbai', 'Bangalore', 'Chennai', 'Kolkata'))
+  filter(county %in% c('Mumbai', 'Bangalore', 'Chennai', 'Kolkata'))
 
-ggplot(stats, 
-       aes(x=OBSERVATION.DATE, 
-           y=value, 
-           group=PROTOCOL.TYPE)) +
-  geom_line(aes(color=PROTOCOL.TYPE), size=1) +
+ggplot(stats, aes(x=date, y=value, group=protocol)) +
+  geom_line(aes(color=protocol), size=1) +
   labs(y='') +
   geom_vline(xintercept=as.numeric(as.Date("2020-03-25")), linetype='dashed') +
   scale_x_date(date_breaks = '10 days', date_labels = '%b\n%d') +
@@ -79,18 +72,19 @@ ggplot(stats,
         axis.line = element_blank(), 
         axis.title.x = element_blank(),
         strip.text = element_text(size=12)) +
-  facet_wrap(~COUNTY+key, scales='free', ncol=3)
+  facet_wrap(~county+key, scales='free', ncol=3)
 ggsave('./figs/4citytrend.png', height=10,width=8)
 
 #-----------------------------------------------
 # TABLE 0 : TOP 20 Cities
 #-----------------------------------------------
+
 # All Cities
-ebird20.d <- filter(ebird20, OBSERVATION.DATE != '2020-03-22')
+ebird20.d <- filter(ebird20, date != '2020-03-22')
 stats <- ebird20.d %>%
   select_sample(num_cities = 20) %>%
-  group_by(COUNTY) %>%
-  summarize(State = first(STATE))
+  group_by(county) %>%
+  summarize(State = first(state))
 stargazer(stats, summary=F, rownames=F, out= './tables/cities.tex')
 
 #-----------------------------------------------
@@ -98,33 +92,29 @@ stargazer(stats, summary=F, rownames=F, out= './tables/cities.tex')
 #-----------------------------------------------
 stats <- ebird20.d %>%
   select_sample() %>%
-  mutate(PREPOST = if_else(
-    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
-  ) %>%
-  group_by(PREPOST) %>%
-  summarize(`Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
-            `Num. Cities` = n_distinct(COUNTY),
-            `Num. Users` = n_distinct(OBSERVER.ID),
-            `Num. Species` = n_distinct(TAXONOMIC.ORDER)) %>%
-  arrange(desc(PREPOST)) %>%
+  mutate(prepost = if_else(date <= '2020-03-24', 'Before', 'After')) %>%
+  group_by(prepost) %>%
+  summarize(`Num. Trips` = n_distinct(trip_id),
+            `Num. Cities` = n_distinct(county),
+            `Num. Users` = n_distinct(observer_id),
+            `Num. Species` = n_distinct(taxonomic_order)) %>%
+  arrange(desc(prepost)) %>%
   pivot_longer(starts_with('N'), names_to = 'Num') %>%
-  pivot_wider(names_from = PREPOST, values_from = value)
+  pivot_wider(names_from = prepost, values_from = value)
 panel1 <- stargazer(stats, summary=F, rownames=F)
 
 # Top 20
 stats <- ebird20.d %>%
   select_sample(num_cities = 20) %>%
-  mutate(PREPOST = if_else(
-    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
-  ) %>%
-  group_by(PREPOST) %>%
-  summarize(`Num. Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
-            `Num. Cities` = n_distinct(COUNTY),
-            `Num. Users` = n_distinct(OBSERVER.ID),
-            `Num. Species` = n_distinct(TAXONOMIC.ORDER)) %>%
-  arrange(desc(PREPOST)) %>%
+  mutate(prepost = if_else(date <= '2020-03-24', 'Before', 'After')) %>%
+  group_by(prepost) %>%
+  summarize(`Num. Trips` = n_distinct(trip_id),
+            `Num. Cities` = n_distinct(county),
+            `Num. Users` = n_distinct(observer_id),
+            `Num. Species` = n_distinct(taxonomic_order)) %>%
+  arrange(desc(prepost)) %>%
   pivot_longer(starts_with('N'), names_to = 'Num') %>%
-  pivot_wider(names_from = PREPOST, values_from = value)
+  pivot_wider(names_from = prepost, values_from = value)
 panel2 <- stargazer(stats, summary=F, rownames=F)
 star_panel(panel1, panel2, 
            panel.names = c('All Cities', 'Top 20'), 
@@ -138,45 +128,39 @@ star_panel(panel1, panel2,
 # All Cities
 stats <- ebird20.d %>%
   select_sample() %>%
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                DURATION.MINUTES, s_richness, COUNTY, 
-                temperature, rain, hotspot_km) %>%
-  mutate(PREPOST = if_else(
-    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
-  ) %>%
-  group_by(PREPOST) %>%
-  summarize(`Mean Trip Length` = round(mean(DURATION.MINUTES, na.rm=T), 2),
+  distinct(trip_id, .keep_all = T) %>%
+  dplyr::select(date, trip_id, duration, s_richness, 
+                county, temperature, rain, hotspot_km) %>%
+  mutate(prepost = if_else(date <= '2020-03-24', 'Before', 'After')) %>%
+  group_by(prepost) %>%
+  summarize(`Mean Trip Length` = round(mean(duration, na.rm=T), 2),
             `Mean Species Richness` = round(mean(s_richness, na.rm=T), 2),
             `Median Species Richness` = median(s_richness, na.rm=T),
             `Mean Dist. to Hotspot (km)` = round(mean(hotspot_km, na.rm = T), 2),
             `Mean Rainfall (mm)` = round(mean(rain, na.rm=T), 2),
             `Mean Temperature (Celsius)` = round(mean(temperature, na.rm=T), 2)) %>%
-  arrange(desc(PREPOST)) %>%
+  arrange(desc(prepost)) %>%
   pivot_longer(starts_with('M'), names_to = ' ') %>%
-  pivot_wider(names_from = PREPOST, values_from = value)
+  pivot_wider(names_from = prepost, values_from = value)
 panel1 <- stargazer(stats, summary=F, digits=2, rownames=F)
 
 # Top 20
 stats <- ebird20.d %>%
   select_sample(num_cities = 20) %>%
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                DURATION.MINUTES, s_richness, COUNTY, 
-                temperature, rain, hotspot_km) %>%
-  mutate(PREPOST = if_else(
-    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
-  ) %>%
-  group_by(PREPOST) %>%
-  summarize(`Mean Trip Length` = round(mean(DURATION.MINUTES, na.rm=T),2),
+  distinct(trip_id, .keep_all = T) %>%
+  dplyr::select(date, trip_id, duration, s_richness, 
+                county, temperature, rain, hotspot_km) %>%
+  mutate(prepost = if_else(date <= '2020-03-24', 'Before', 'After')) %>%
+  group_by(prepost) %>%
+  summarize(`Mean Trip Length` = round(mean(duration, na.rm=T),2),
             `Mean Species Richness` = round(mean(s_richness, na.rm=T),2),
             `Median Species Richness` = median(s_richness, na.rm=T),
             `Mean Dist. to Hotspot (km)` = round(mean(hotspot_km, na.rm = T), 2),
             `Mean Rainfall (mm)` = round(mean(rain, na.rm=T), 2),
             `Mean Temperature (Celsius)` = round(mean(temperature, na.rm=T), 2)) %>%
-  arrange(desc(PREPOST)) %>%
+  arrange(desc(prepost)) %>%
   pivot_longer(starts_with('M'), names_to = ' ') %>%
-  pivot_wider(names_from = PREPOST, values_from = value)
+  pivot_wider(names_from = prepost, values_from = value)
 
 panel2 <- stargazer(stats, summary=F, rownames=F, digits=2)
 star_panel(panel1, panel2, 
@@ -193,29 +177,27 @@ stats1 <- ebird20.d %>%
   select_sample(num_cities = 20) %>% 
   mutate(label = 'Stationary + Travelling')
 stats2 <- ebird20.d %>%
-  filter(PROTOCOL.TYPE == 'Stationary') %>% 
+  filter(protocol == 'Stationary') %>% 
   select_sample(num_cities=20) %>%
   mutate(label = 'Stationary')
 stats <- rbind(stats1, stats2)
 rm(list=c('stats1','stats2'))
 
 stats <- stats %>%  
-  distinct(label, SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVER.ID, OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                DURATION.MINUTES, s_richness, COUNTY, label) %>%
-  mutate(PREPOST = if_else(
-    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After')
-  ) %>%
-  group_by(label, COUNTY, PREPOST) %>%
+  distinct(label, trip_id, .keep_all = T) %>%
+  dplyr::select(observer_id, date, trip_id, duration, 
+                s_richness, county, label) %>%
+  mutate(prepost = if_else(date <= '2020-03-24', 'Before', 'After')) %>%
+  group_by(label, county, prepost) %>%
   summarize(mean = mean(s_richness, na.rm=T),
             sd = sd(s_richness, na.rm=T),
             n = n(),
             se = sd/sqrt(n)) %>%
-  filter(COUNTY %in% c('Bangalore', 'Chennai', 'Kolkata', 'Mumbai'))
+  filter(county %in% c('Bangalore', 'Chennai', 'Kolkata', 'Mumbai'))
 
 ggplot(stats, aes(x=label, 
                   y=mean, 
-                  fill=PREPOST)) + 
+                  fill=prepost)) + 
   geom_bar(stat = 'identity', position='dodge') + 
   geom_errorbar(aes(ymin = mean - se, ymax = mean + se),
                 position = position_dodge2(padding = 0.8)) +
@@ -229,7 +211,7 @@ ggplot(stats, aes(x=label,
         axis.title.x = element_blank(),
         axis.ticks = element_blank(),
         strip.text = element_text(size=12)) +
-  facet_wrap(~COUNTY, scales = 'free')
+  facet_wrap(~county, scales = 'free')
 ggsave('./figs/srtrip_4cities.png', height=6,width=8)
 
 #---------------------------------------------------
@@ -237,15 +219,13 @@ ggsave('./figs/srtrip_4cities.png', height=6,width=8)
 #--------------------------------------------------
 stats <- ebird20.d %>%
   select_sample(num_cities = 20) %>%
-  distinct(SAMPLING.EVENT.IDENTIFIER, .keep_all = T) %>%
-  dplyr::select(OBSERVATION.DATE, SAMPLING.EVENT.IDENTIFIER, 
-                DURATION.MINUTES, HOUR) %>%
-  mutate(PREPOST = if_else(
-    OBSERVATION.DATE <= '2020-03-24', 'Before', 'After'))
+  distinct(trip_id, .keep_all = T) %>%
+  dplyr::select(date, trip_id, duration, hour) %>%
+  mutate(prepost = if_else(date <= '2020-03-24', 'Before', 'After'))
 
 ggplot(data = stats, 
-       aes(x = HOUR, y = ..prop.., 
-           fill=PREPOST)) +
+       aes(x = hour, y = ..prop.., 
+           fill=prepost)) +
   geom_bar(alpha=0.5, position='identity') +
   labs(x='\nHour of Day', y='% of Trips\n', fill = "") +
   scale_x_continuous(breaks = seq(0, 23, by = 2)) +
@@ -257,16 +237,17 @@ ggplot(data = stats,
 ggsave('./figs/hour_distbn.png', height=6,width=8)
 
 #-----------------------------------------------
-# FIG 5 : DIFF IN DIFF GRAPH
+# FIG 5 : DIFF IN DIFF GRAPH - 2019/2020
 #-----------------------------------------------
-sample <- did(ebird_full, drop=F)
+ebird_1920 <- filter(ebird_full, year %in% c(2019, 2020))
+sample <- did(ebird_1920, drop=F)
 dd_type <- sample %>%
-  group_by(dif, YEAR, PROTOCOL.TYPE) %>%
+  group_by(dif, year, protocol) %>%
   summarize(`Num. Species/Trip` = mean(s_richness, na.rm=T),
-            `B. Num. of Trips` = n_distinct(SAMPLING.EVENT.IDENTIFIER),
-            `A. Num. Active Users` = n_distinct(OBSERVER.ID)) %>%
+            `B. Num. of Trips` = n_distinct(trip_id),
+            `A. Num. Active Users` = n_distinct(observer_id)) %>%
   gather(var, value, contains('Num.')) %>%
-  pivot_wider(names_from = c(YEAR, PROTOCOL.TYPE), values_from=value) %>%
+  pivot_wider(names_from = c(year, protocol), values_from=value) %>%
   mutate(Stationary = `2020_Stationary` - `2019_Stationary`,
          Travelling = `2020_Traveling` - `2019_Traveling`) %>%
   dplyr::select(dif, var, Stationary, Travelling) %>%
@@ -306,6 +287,42 @@ ggplot(dd_type[dd_type$var != 'Num. Species/Trip',], aes(x=(dif), y=value, group
   facet_wrap(~var, scales='free')
 ggsave('./figs/dd_activity_plot.png', height=6,width=15)
 
+
+#-----------------------------------------------
+# FIG 6 : DIFF IN DIFF GRAPH - PLACEBO
+#-----------------------------------------------
+ebird_1819 <- filter(ebird_full, year %in% c(2018, 2019))
+sample <- did_placebo(ebird_1819)
+dd_type <- sample %>%
+  group_by(dif, year, protocol) %>%
+  summarize(`C. Num. Species/Trip` = mean(s_richness, na.rm=T),
+            `B. Num. of Trips` = n_distinct(trip_id),
+            `A. Num. Active Users` = n_distinct(observer_id)) %>%
+  gather(var, value, contains('Num.')) %>%
+  pivot_wider(names_from = c(year, protocol), values_from=value) %>%
+  mutate(Stationary = `2019_Stationary` - `2018_Stationary`,
+         Travelling = `2019_Traveling` - `2018_Traveling`) %>%
+  dplyr::select(dif, var, Stationary, Travelling) %>%
+  gather(key, value, c('Stationary', 'Travelling'))
+
+# Birding Activity
+ggplot(dd_type, aes(x=(dif), y=value, group=key)) +
+  geom_line(aes(color=key), size=1.5) + 
+  labs(y='',
+       x='\nDays since 4th Wednesday in March', color = 'Trip Protocol') +
+  geom_vline(xintercept=0, linetype='dashed') +
+  geom_hline(yintercept=0, linetype='dashed') +
+  scale_colour_viridis_d() +
+  scale_x_continuous(breaks = c(-21, -14, -7, 0, 7, 14, 21),
+                     labels= c('-21', '-14', '-7', '0\n[4th Wed.]','7', '14', '21')) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(), 
+        axis.line = element_blank(),
+        text = element_text(size=20),
+        strip.text = element_text(size=19)) +
+  facet_wrap(~var, scales='free')
+ggsave('./figs/dd_placebo.png', height=6,width=15)
+
 #------------------------------------------------------------
 # TABLE 3 : DD REGRESSION RESULTS
 #------------------------------------------------------------
@@ -335,10 +352,10 @@ estimates <- data.frame()
 # Top 20, 2 Trips
 sample <- did(ebird_full, num_cities=20)
 estimates <- rbind(estimates, tidy(lm_robust(s_richness ~ TreatPost + Treatment + Post + 
-                                               DURATION.MINUTES + rain + temperature + weekend + 
-                                               NUMBER.OBSERVERS + hotspot_km,
+                                               duration + rain + temperature + weekend + 
+                                               number_observers + hotspot_km,
                                              data = sample,
-                                             fixed_effects = COUNTY + PROTOCOL.TYPE + as.factor(HOUR),
+                                             fixed_effects = county + protocol + as.factor(hour),
                                              se_type = 'stata')) %>%
                      filter(term == 'TreatPost') %>%
                      select(estimate, std.error) %>%
@@ -351,12 +368,12 @@ estimates <- rbind(estimates, tidy(lm_robust(s_richness ~ TreatPost + Treatment 
                             spec_no = 1))
 
 # Top 20, 5 Trips
-sample <- did(ebird_full, before=5, after=5, num_cities=20)
+sample <- did(ebird_1920, before=5, after=5, num_cities=20)
 estimates <- rbind(estimates, tidy(lm_robust(s_richness ~ TreatPost + Treatment + Post + 
-                                               DURATION.MINUTES + rain + temperature + weekend +
-                                               NUMBER.OBSERVERS + hotspot_km,
+                                               duration + rain + temperature + weekend +
+                                               number_observers + hotspot_km,
                                              data = sample,
-                                             fixed_effects = COUNTY + PROTOCOL.TYPE + as.factor(HOUR),
+                                             fixed_effects = county + protocol + as.factor(hour),
                                              se_type = 'stata')) %>%
                      filter(term == 'TreatPost') %>%
                      select(estimate, std.error) %>%
@@ -369,12 +386,12 @@ estimates <- rbind(estimates, tidy(lm_robust(s_richness ~ TreatPost + Treatment 
                             spec_no = 2))
 
 # Top 20, 10 Trips
-sample <- did(ebird_full, before=10, after=10, num_cities=20)
+sample <- did(ebird_1920, before=10, after=10, num_cities=20)
 estimates <- rbind(estimates, tidy(lm_robust(s_richness ~ TreatPost + Treatment + Post + 
-                                               DURATION.MINUTES + rain + temperature + weekend +
-                                               NUMBER.OBSERVERS + hotspot_km,
+                                               duration + rain + temperature + weekend +
+                                               number_observers + hotspot_km,
                                              data = sample,
-                                             fixed_effects = COUNTY + PROTOCOL.TYPE + as.factor(HOUR),
+                                             fixed_effects = county + protocol + as.factor(hour),
                                              se_type = 'stata')) %>%
                      filter(term == 'TreatPost') %>%
                      select(estimate, std.error) %>%
@@ -426,11 +443,11 @@ save_plot("./figs/spec_curve_main.png", combined_plot_main)
 estimates <- data.frame()
 
 # Top 20, 2 Trips, No Controls
-sample <- did(ebird_full, num_cities=20)
+sample <- did(ebird_1920, num_cities=20)
 estimates <- rbind(estimates, tidy(lm_robust(s_richness ~ TreatPost + Treatment + Post + 
-                                               DURATION.MINUTES + rain + temperature + weekend,
+                                               duration + rain + temperature + weekend,
                                              data = sample,
-                                             fixed_effects = COUNTY + PROTOCOL.TYPE + as.factor(HOUR),
+                                             fixed_effects = county + protocol + as.factor(hour),
                                              se_type = 'stata')) %>%
                      filter(term == 'TreatPost') %>%
                      mutate(`Fixed Effects` = 'District + Hour',
@@ -440,12 +457,12 @@ estimates <- rbind(estimates, tidy(lm_robust(s_richness ~ TreatPost + Treatment 
                             spec_no = 1))
 
 # All cities, 2 trips
-sample <- did(ebird_full)
+sample <- did(ebird_1920)
 estimates <- rbind(estimates, tidy(lm_robust(s_richness ~ TreatPost + Treatment + Post + 
-                                               DURATION.MINUTES + rain + temperature + weekend +
-                                               NUMBER.OBSERVERS + hotspot_km,
+                                               duration + rain + temperature + weekend +
+                                               number_observers + hotspot_km,
                                              data = sample,
-                                             fixed_effects = COUNTY + PROTOCOL.TYPE + as.factor(HOUR),
+                                             fixed_effects = county + protocol + as.factor(hour),
                                              se_type = 'stata')) %>%
                      filter(term == 'TreatPost') %>%
                      mutate(`Fixed Effects` = 'District + Hour',
@@ -511,14 +528,14 @@ save_plot("./figs/spec_curve_rb.png", combined_plot_rb)
 # Top 20, 2 trips
 dd_time <- data.frame()
 
-sample <- did(ebird_full, num_cities=20) %>%
+sample <- did(ebird_1920, num_cities=20) %>%
   mutate(bin = relevel(cut(as.numeric(dif), 8), 4))
 
 dd_time <- rbind(dd_time, tidy(lm_robust(s_richness ~ Treatment:bin + Treatment + bin + 
-                 DURATION.MINUTES + rain + temperature + weekend +
-                 NUMBER.OBSERVERS + hotspot_km,
+                 duration + rain + temperature + weekend +
+                 number_observers + hotspot_km,
                data = sample,
-               fixed_effects = COUNTY + PROTOCOL.TYPE + as.factor(HOUR),
+               fixed_effects = county + protocol + as.factor(hour),
                se_type = 'stata')) %>%
   filter(str_detect(term, '^Treatment:')) %>%
   mutate(term = str_replace(term, 'Treatment:bin', ''),
@@ -547,14 +564,14 @@ ggsave('./figs/dynamic_dd_2trip.png', height=6,width=10)
 
 # Top 20, 5 trips
 dd_time <- data.frame()
-sample <- did(ebird_full, num_cities=20, before=5, after=5) %>%
+sample <- did(ebird_1920, num_cities=20, before=5, after=5) %>%
   mutate(bin = relevel(cut(as.numeric(dif), 8), 4))
 
 dd_time <- rbind(dd_time, tidy(lm_robust(s_richness ~ Treatment:bin + Treatment + bin + 
-                                           DURATION.MINUTES + rain + temperature + weekend +
-                                           NUMBER.OBSERVERS + hotspot_km,
+                                           duration + rain + temperature + weekend +
+                                           number_observers + hotspot_km,
                                          data = sample,
-                                         fixed_effects = COUNTY + PROTOCOL.TYPE + as.factor(HOUR),
+                                         fixed_effects = county + protocol + as.factor(hour),
                                          se_type = 'stata')) %>%
                    filter(str_detect(term, '^Treatment:')) %>%
                    mutate(term = str_replace(term, 'Treatment:bin', ''),

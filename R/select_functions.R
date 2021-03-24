@@ -16,12 +16,12 @@ select_cities <- function(df, num) {
   ## df_cities: subset of df restricted to observations in the top 'num' cities
   
   city_list <- df %>%
-    group_by(county) %>%
-    summarize(state = first(state),
-              pop_density = first(pop_density)) %>%
-    arrange(desc(pop_density)) %>%
-    head(num)
-  df_cities <- merge(df, city_list, by = 'COUNTY')
+    distinct(county, .keep_all=T) %>%
+    select(county, POP_DENSITY) %>%
+    arrange(desc(POP_DENSITY)) %>%
+    head(num) %>% select(county)
+  
+  df_cities <- merge(df, city_list, by = 'county')
   
   return(df_cities)
   
@@ -157,7 +157,7 @@ did_placebo <- function(df,
   # 2018 Slice
   df_18 <- filter(df, year == 2018 & date <= '2018-04-20' & date >= '2018-03-04') 
   df_18 <- select_sample(df_18, before, after, num_cities, lockdown='2018-03-27')
-  df_18 <- df_19 %>%
+  df_18 <- df_18 %>%
     distinct(trip_id, .keep_all = T) %>%
     dplyr::select(observer_id, date, trip_id, year, duration, s_richness, 
                   county, state, protocol, hour, rain, temperature, weekend, 
