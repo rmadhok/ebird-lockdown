@@ -1,7 +1,8 @@
-scripts/R/archive/
-data/intermediate/
+scripts/R/archive
+data/intermediate
 docs
 figs
 refs
 tables
 tex3pt*
+
