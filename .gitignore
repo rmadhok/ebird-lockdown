@@ -1,5 +1,5 @@
 scripts/R/archive/
-data/intermediate
+data/intermediate/
 docs
 figs
 refs
