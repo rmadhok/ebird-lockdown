@@ -1,9 +1,9 @@
 scripts/R/archive/
-scripts/R/ebd_reduce.R/
-scripts/R/lockdown_process.R/
-scripts/R/nc_to_tiff_gpm.R/
-scripts/R/rain_gpm_process.R/
-scripts/R/temp_era_process.R/
+scripts/R/ebd_reduce.R
+scripts/R/lockdown_process.R
+scripts/R/nc_to_tiff_gpm.R
+scripts/R/rain_gpm_process.R
+scripts/R/temp_era_process.R
 data/intermediate/
 docs/
 figs/
